@@ -421,6 +421,22 @@ def offer_tld_csv(
     )
 
 
+@router.get("/admin/offers/{offer_id}/unsubscribers/csv")
+def offer_unsubscribers_csv(
+    offer_id: str,
+    format: str = "plain",
+    _=Depends(require_admin),
+):
+    from fastapi.responses import Response
+    csv = get_offer_csv_data(fernet, offer_id, format)
+    suffix = "md5" if format == "md5" else "full"
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=offer_{offer_id}_unsubscribers_{suffix}.csv"},
+    )
+
+
 @router.get("/admin/offers/{offer_id}", response_class=HTMLResponse)
 def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
     off = get_offer(fernet, offer_id)
@@ -489,6 +505,7 @@ async function regenerateToken(){{
   linkMsg('Token regenerated! Copy the new links above.','ok');
 }}
 function linkMsg(t,c){{const el=document.getElementById('link-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}}
+fetch('/admin/offers/{off.id}/stats').then(r=>{{if(!r.ok)throw new Error(r.status);return r.json()}}).then(data=>{{document.getElementById('stat-total').textContent=data.total;const tb=document.getElementById('tld-body');if(data.tlds.length===0){{tb.innerHTML='<tr><td colspan="3" class="muted">No unsubscribers yet</td></tr>';return;}}tb.innerHTML=data.tlds.map(t=>'<tr><td>'+t.domain+'</td><td>'+t.count+'</td>'+'<td class="flex">'+'<a class="btn-sm" style="background:#43a047;color:white;text-decoration:none" href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=plain">Plain</a>'+'<a class="btn-sm" style="background:#e65100;color:white;text-decoration:none" href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=md5">MD5</a>'+'</td></tr>').join('');}}).catch(e=>{{document.getElementById('stat-total').textContent='Error';document.getElementById('tld-body').innerHTML='<tr><td colspan="3" class="muted">Failed to load stats</td></tr>'}});
 </script>"""
 
     return _page(f"Offer: {off.name}", payload["sub"], payload["role"], "offers", content)
@@ -746,22 +763,6 @@ def regenerate_feed(req: GenerateFeedRequest, _=Depends(require_admin)):
         return {"feed_url": feed_url, "token": token}
     except ValueError as e:
         raise HTTPException(400, str(e))
-
-
-@router.get("/admin/offers/{offer_id}/unsubscribers/csv")
-def offer_unsubscribers_csv(
-    offer_id: str,
-    format: str = "plain",
-    _=Depends(require_admin),
-):
-    from fastapi.responses import Response
-    csv = get_offer_csv_data(fernet, offer_id, format)
-    suffix = "md5" if format == "md5" else "full"
-    return Response(
-        content=csv,
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=offer_{offer_id}_unsubscribers_{suffix}.csv"},
-    )
 
 
 # ── Enhanced dashboard ──
