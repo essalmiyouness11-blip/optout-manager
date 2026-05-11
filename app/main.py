@@ -7,6 +7,7 @@ from .routes.unsubscribe import router as unsubscribe_router
 from .routes.status import router as status_router
 from .routes.admin import router as admin_router
 from .routes.auth import router as auth_router
+from .routes.feed import router as feed_router
 from .crypto import make_fernet
 from .store import user_count
 from .middleware import add_middleware
@@ -23,6 +24,7 @@ app.include_router(unsubscribe_router)
 app.include_router(status_router)
 app.include_router(admin_router)
 app.include_router(auth_router)
+app.include_router(feed_router)
 
 
 @app.get("/")

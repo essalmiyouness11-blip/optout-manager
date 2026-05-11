@@ -339,3 +339,108 @@ def get_dashboard(fernet: Fernet) -> dict:
             offs.append({"id": o.id, "name": o.name, "unsubscribers": count})
 
     return {"networks": nets, "offers": offs, "global_count": global_count}
+
+
+# ── Unsubscribers listing ──
+
+def get_unsubscribers_for_target(
+    fernet: Fernet,
+    level: str,
+    target: str,
+    since: int = 0,
+) -> list[dict]:
+    with _lock:
+        store = _load(fernet)
+        results = []
+        for email_hash, entry in store.suppressions.items():
+            ts = None
+            if level == "global" and entry.global_:
+                ts = entry.global_
+            elif level == "network":
+                ts = entry.networks.get(target)
+            elif level == "offer":
+                ts = entry.offers.get(target)
+            if ts is not None and ts > since:
+                results.append({"email_hash": email_hash, "timestamp": ts})
+    results.sort(key=lambda r: r["timestamp"], reverse=True)
+    return results
+
+
+def get_all_statistics(fernet: Fernet) -> dict:
+    with _lock:
+        store = _load(fernet)
+
+    total_suppressed = len(store.suppressions)
+    global_count = 0
+    network_counts: dict[str, int] = {}
+    offer_counts: dict[str, int] = {}
+    total_network = 0
+    total_offer = 0
+
+    for entry in store.suppressions.values():
+        if entry.global_:
+            global_count += 1
+        for nid in entry.networks:
+            network_counts[nid] = network_counts.get(nid, 0) + 1
+            total_network += 1
+        for oid in entry.offers:
+            offer_counts[oid] = offer_counts.get(oid, 0) + 1
+            total_offer += 1
+
+    net_details = []
+    for n in (store.networks or {}).values():
+        c = network_counts.get(n.id, 0)
+        if c > 0:
+            net_details.append({"id": n.id, "name": n.name, "count": c})
+
+    off_details = []
+    for o in (store.offers or {}).values():
+        c = offer_counts.get(o.id, 0)
+        if c > 0:
+            net_name = ""
+            net = (store.networks or {}).get(o.network_id)
+            if net:
+                net_name = net.name
+            off_details.append({"id": o.id, "name": o.name, "network": net_name, "count": c})
+
+    return {
+        "total_suppressed": total_suppressed,
+        "global": {"count": global_count},
+        "networks": {"total": total_network, "details": net_details},
+        "offers": {"total": total_offer, "details": off_details},
+    }
+
+
+# ── Feed token management ──
+
+def generate_feed_token(fernet: Fernet, level: str, target: str) -> str:
+    import secrets
+    token = secrets.token_hex(24)
+    with _lock:
+        store = _load(fernet)
+        if level == "network":
+            net = (store.networks or {}).get(target)
+            if not net:
+                raise ValueError("Network not found")
+            net.feed_token = token
+        elif level == "offer":
+            off = (store.offers or {}).get(target)
+            if not off:
+                raise ValueError("Offer not found")
+            off.feed_token = token
+        else:
+            raise ValueError("Invalid level")
+        _save(fernet, store)
+    return token
+
+
+def get_feed_token(fernet: Fernet, level: str, target: str) -> str:
+    with _lock:
+        store = _load(fernet)
+        if level == "network":
+            net = (store.networks or {}).get(target)
+            return net.feed_token if net else ""
+        elif level == "offer":
+            off = (store.offers or {}).get(target)
+            return off.feed_token if off else ""
+    return ""

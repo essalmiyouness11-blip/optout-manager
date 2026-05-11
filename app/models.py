@@ -22,6 +22,7 @@ class SuppressionEntry(BaseModel):
 class AffiliateNetworkEntry(BaseModel):
     id: str
     name: str
+    feed_token: str = ""
     created_at: int = 0
 
 
@@ -29,6 +30,7 @@ class OfferEntry(BaseModel):
     id: str
     name: str
     network_id: str
+    feed_token: str = ""
     created_at: int = 0
 
 
@@ -136,13 +138,19 @@ class OfferResponse(BaseModel):
     created_at: int
 
 
-class DashboardEntry(BaseModel):
-    id: str
-    name: str
-    unsubscribers: int
+class UnsubscriberRecord(BaseModel):
+    email_hash: str
+    timestamp: int
 
 
-class DashboardResponse(BaseModel):
-    networks: list[DashboardEntry] = []
-    offers: list[DashboardEntry] = []
-    global_count: int = 0
+class FeedResponse(BaseModel):
+    target: str
+    level: str
+    generated_at: int
+    count: int
+    unsubscribers: list[UnsubscriberRecord]
+
+
+class GenerateFeedRequest(BaseModel):
+    level: str = Field(pattern=r"^(network|offer)$")
+    target: str

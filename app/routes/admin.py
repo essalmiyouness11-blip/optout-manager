@@ -10,10 +10,12 @@ from ..store import (
     list_users, create_user, delete_user,
     create_network, get_network, list_networks, update_network, delete_network,
     create_offer, get_offer, list_offers, update_offer, delete_offer,
-    get_dashboard,
+    get_dashboard, get_all_statistics,
+    get_unsubscribers_for_target,
+    generate_feed_token,
 )
 from ..models import (
-    GenerateLinkRequest, GenerateLinkResponse,
+    GenerateLinkRequest, GenerateLinkResponse, GenerateFeedRequest,
     CreateUserRequest, UserResponse,
     CreateNetworkRequest, UpdateNetworkRequest, NetworkResponse,
     CreateOfferRequest, UpdateOfferRequest, OfferResponse,
@@ -31,6 +33,7 @@ _ADMIN_TABS = """
   <a href="/admin/generate" class="tab %s">Generate</a>
   <a href="/admin/networks" class="tab %s">Networks</a>
   <a href="/admin/offers" class="tab %s">Offers</a>
+  <a href="/admin/unsubscribers" class="tab %s">Unsubscribers</a>
   <a href="/admin/dashboard" class="tab %s">Dashboard</a>
   <a href="/admin/users" class="tab %s">Users</a>
 </div>
@@ -91,7 +94,7 @@ th{font-weight:600;color:#555;font-size:0.8rem;text-transform:uppercase}
 
 
 def _page(title, user_email, user_role, active_tab, content):
-    tabs = _ADMIN_TABS % tuple(active_tab if i == ["generate","networks","offers","dashboard","users"].index(active_tab) else "" for i in range(5))
+    tabs = _ADMIN_TABS % tuple(active_tab if i == ["generate","networks","offers","unsubscribers","dashboard","users"].index(active_tab) else "" for i in range(6))
     return _PAGE % (title, user_email, user_role, tabs, content)
 
 
@@ -463,6 +466,180 @@ def delete_user_endpoint(email: str, _=Depends(require_admin)):
     if not delete_user(fernet, email):
         raise HTTPException(404, "User not found")
     return {"status": "deleted"}
+
+
+# ── Unsubscribers page ──
+
+@router.get("/admin/unsubscribers", response_class=HTMLResponse)
+def unsubscribers_page(payload: dict = Depends(require_admin)):
+    nets = list_networks(fernet)
+    offs = list_offers(fernet)
+    net_opts = "".join(f'<option value="{n.id}">{n.name}</option>' for n in nets)
+    off_opts = "".join(f'<option value="{o.id}" data-net="{o.network_id}">{o.name}</option>' for o in offs)
+
+    content = f"""
+<div class="card">
+  <h2>Filter Unsubscribers</h2>
+  <form id="filter-form" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end">
+    <div style="flex:1;min-width:120px">
+      <label class="muted">Type</label>
+      <select id="filter-level">
+        <option value="offer">Offer</option>
+        <option value="network">Network</option>
+        <option value="global">Global</option>
+      </select>
+    </div>
+    <div style="flex:1;min-width:150px" id="filter-net-div">
+      <label class="muted">Network</label>
+      <select id="filter-net">{net_opts}</select>
+    </div>
+    <div style="flex:1;min-width:150px" id="filter-off-div">
+      <label class="muted">Offer</label>
+      <select id="filter-off">{off_opts}</select>
+    </div>
+    <button type="submit" class="btn">Search</button>
+    <button type="button" class="btn" id="export-btn" style="background:#43a047">Export CSV</button>
+  </form>
+</div>
+<div class="card">
+  <h2>Results <span id="result-count" class="muted"></span></h2>
+  <div id="loading" style="text-align:center;padding:2rem;color:#999">Select filters and click Search</div>
+  <div id="result-table" style="display:none">
+    <table><thead><tr><th>Email Hash</th><th>Unsubscribed At</th></tr></thead>
+    <tbody id="result-body"></tbody></table>
+  </div>
+</div>
+<script>
+document.getElementById('filter-level').addEventListener('change',function(){{
+  const v=this.value;
+  document.getElementById('filter-net-div').style.display=v==='global'?'none':'block';
+  document.getElementById('filter-off-div').style.display=v==='offer'?'block':'none';
+}});
+document.getElementById('filter-form').addEventListener('submit',async function(e){{
+  e.preventDefault();search();}});
+document.getElementById('export-btn').addEventListener('click',function(){{
+  const level=document.getElementById('filter-level').value;
+  const params=new URLSearchParams({{level}});
+  if(level==='network') params.set('network_id',document.getElementById('filter-net').value);
+  if(level==='offer') params.set('offer_id',document.getElementById('filter-off').value);
+  window.location.href='/admin/unsubscribers/export?'+params.toString();
+}});
+async function search(){{
+  const level=document.getElementById('filter-level').value;
+  const params=new URLSearchParams({{level}});
+  if(level==='network') params.set('target',document.getElementById('filter-net').value);
+  if(level==='offer') params.set('target',document.getElementById('filter-off').value);
+  if(level==='global') params.set('target','*');
+  document.getElementById('loading').textContent='Loading...';
+  document.getElementById('loading').style.display='block';
+  document.getElementById('result-table').style.display='none';
+  const res=await fetch('/admin/unsubscribers/data?'+params.toString());
+  const data=await res.json();
+  document.getElementById('loading').style.display='none';
+  if(data.length===0){{
+    document.getElementById('loading').textContent='No results';
+    document.getElementById('loading').style.display='block';
+    document.getElementById('result-count').textContent='';
+    return;
+  }}
+  document.getElementById('result-count').textContent='('+data.length+' records)';
+  document.getElementById('result-body').innerHTML=data.map(r=>
+    '<tr><td style="font-family:monospace;font-size:0.75rem">'+r.email_hash+'</td><td>'+new Date(r.timestamp*1000).toLocaleString()+'</td></tr>'
+  ).join('');
+  document.getElementById('result-table').style.display='block';
+}}
+</script>"""
+    return _page("Unsubscribers", payload["sub"], payload["role"], "unsubscribers", content)
+
+
+@router.get("/admin/unsubscribers/data")
+def unsubscribers_data(
+    level: str = "offer",
+    target: str = "",
+    _=Depends(require_admin),
+):
+    if level == "global":
+        target = "*"
+    results = get_unsubscribers_for_target(fernet, level, target)
+    return JSONResponse(content=results)
+
+
+@router.get("/admin/unsubscribers/export")
+def unsubscribers_export(
+    level: str = "offer",
+    offer_id: str = "",
+    network_id: str = "",
+    _=Depends(require_admin),
+):
+    from fastapi.responses import Response
+    target = offer_id or network_id or "*"
+    if level == "global":
+        target = "*"
+    results = get_unsubscribers_for_target(fernet, level, target)
+    lines = ["email_hash,timestamp"]
+    for r in results:
+        lines.append(f'{r["email_hash"]},{r["timestamp"]}')
+    csv = "\n".join(lines) + "\n"
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=unsubscribers_{level}_{target}.csv"},
+    )
+
+
+# ── Feed management ──
+
+@router.post("/admin/feed/generate")
+def generate_feed(req: GenerateFeedRequest, _=Depends(require_admin)):
+    try:
+        token = generate_feed_token(fernet, req.level, req.target)
+        feed_url = f"{BASE_URL}/feed/unsubscribers/{req.target}?token={token}&level={req.level}"
+        return {"feed_url": feed_url, "token": token}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# ── Enhanced dashboard ──
+
+@router.get("/admin/dashboard", response_class=HTMLResponse)
+def dashboard_page(payload: dict = Depends(require_admin)):
+    data = get_all_statistics(fernet)
+    net_rows = "".join(
+        f'<tr><td>{n["name"]}</td><td>{n["id"]}</td><td>{n["count"]}</td>'
+        f'<td><button class="btn-sm" onclick="copyFeed(\'{n["id"]}\',\'network\')">Feed</button></td></tr>'
+        for n in data["networks"]["details"]
+    )
+    off_rows = "".join(
+        f'<tr><td>{o["name"]}</td><td>{o["id"]}</td><td>{o["network"]}</td><td>{o["count"]}</td>'
+        f'<td><button class="btn-sm" onclick="copyFeed(\'{o["id"]}\',\'offer\')">Feed</button></td></tr>'
+        for o in data["offers"]["details"]
+    )
+    content = f"""
+<div class="card">
+  <h2>Global Opt-Outs</h2>
+  <p style="font-size:1.5rem;font-weight:700;color:#d32f2f">{data["global"]["count"]}</p>
+</div>
+<div class="card">
+  <h2>Network Unsubscribers</h2>
+  <table><thead><tr><th>Network</th><th>ID</th><th>Count</th><th></th></tr></thead>
+  <tbody>{net_rows or '<tr><td colspan="4" class="muted">No data</td></tr>'}</tbody></table>
+</div>
+<div class="card">
+  <h2>Offer Unsubscribers</h2>
+  <table><thead><tr><th>Offer</th><th>ID</th><th>Network</th><th>Count</th><th></th></tr></thead>
+  <tbody>{off_rows or '<tr><td colspan="5" class="muted">No data</td></tr>'}</tbody></table>
+</div>
+<div id="feed-msg" class="msg"></div>
+<script>
+async function copyFeed(id,level){{
+  const res=await fetch('/admin/feed/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level,target:id}})}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  const data=await res.json();
+  navigator.clipboard.writeText(data.feed_url).then(()=>msg('Feed URL copied to clipboard! Click Share on the feed endpoint to share with your ESP.','ok'));
+}}
+function msg(t,c){{const el=document.getElementById('feed-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',4000)}}
+</script>"""
+    return _page("Dashboard", payload["sub"], payload["role"], "dashboard", content)
 
 
 # ── Export/Import ──
