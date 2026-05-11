@@ -11,7 +11,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 HOST_ROUTES = [
     ("dlx.", ["/feed", "/health"]),
     ("optout.", ["/u", "/check", "/status", "/health"]),
-    ("unsubmepanel.", ["/admin", "/auth", "/health"]),
+    ("unsubmepanel.", ["/", "/admin", "/auth", "/health"]),
 ]
 
 
