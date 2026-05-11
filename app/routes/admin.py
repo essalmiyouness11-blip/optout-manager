@@ -12,7 +12,7 @@ from ..store import (
     create_offer, get_offer, list_offers, update_offer, delete_offer,
     get_dashboard, get_all_statistics,
     get_unsubscribers_for_target,
-    generate_feed_token,
+    generate_feed_token, regenerate_feed_token,
     get_offer_csv_data,
     get_offer_csv_data_by_tld,
     get_offer_statistics,
@@ -442,10 +442,15 @@ def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
 
 <div class="card">
   <h2>Suppression Links <span class="muted">(permanent, auto-update)</span></h2>
-  <p style="margin-bottom:0.75rem;font-size:0.85rem;color:#666">These links never change and always return the latest unsubscriber list.</p>
-  <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+  <p style="margin-bottom:0.75rem;font-size:0.85rem;color:#666">These links are permanent — they never change and always return the latest unsubscriber list.</p>
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.5rem">
     <button class="btn" style="background:#43a047" onclick="copyLink('plain')">Copy Plain TEXT Link</button>
     <button class="btn" style="background:#e65100" onclick="copyLink('md5')">Copy MD5 Link</button>
+    <button class="btn" onclick="copyJsonLink()">Copy JSON Feed</button>
+  </div>
+  <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid #eee">
+    <button class="btn-sm" style="background:#6a1b9a" onclick="regenerateToken()">Regenerate Token</button>
+    <span class="muted" style="margin-left:0.5rem">This invalidates all existing links for this offer</span>
   </div>
   <div id="link-msg" style="margin-top:0.5rem" class="msg"></div>
 </div>
@@ -461,26 +466,29 @@ def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
 </div>
 
 <script>
-async function copyLink(format){{
+async function getToken(){{
   const res=await fetch('/admin/feed/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level:'offer',target:'{off.id}'}})}});
-  if(!res.ok){{const d=await res.json();linkMsg(d.detail||'Error','err');return;}}
-  const data=await res.json();
+  if(!res.ok){{const d=await res.json();linkMsg(d.detail||'Error','err');return null;}}
+  return await res.json();
+}}
+async function copyLink(format){{
+  const data=await getToken();
+  if(!data)return;
   const url=window.DL_URL+'/feed/unsubscribers/'+encodeURIComponent('{off.id}')+'/csv?token='+data.token+'&level=offer&format='+format;
-  navigator.clipboard.writeText(url).then(()=>linkMsg('Suppression link copied!','ok'));
+  navigator.clipboard.writeText(url).then(()=>linkMsg('Permanent suppression link copied!','ok'));
+}}
+async function copyJsonLink(){{
+  const data=await getToken();
+  if(!data)return;
+  navigator.clipboard.writeText(data.feed_url).then(()=>linkMsg('JSON feed URL copied!','ok'));
+}}
+async function regenerateToken(){{
+  if(!confirm('Regenerate token? All existing suppression links for this offer will stop working.'))return;
+  const res=await fetch('/admin/feed/regenerate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level:'offer',target:'{off.id}'}})}});
+  if(!res.ok){{const d=await res.json();linkMsg(d.detail||'Error','err');return;}}
+  linkMsg('Token regenerated! Copy the new links above.','ok');
 }}
 function linkMsg(t,c){{const el=document.getElementById('link-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}}
-
-fetch('/admin/offers/{off.id}/stats').then(r=>r.json()).then(data=>{{
-  document.getElementById('stat-total').textContent=data.total;
-  const tb=document.getElementById('tld-body');
-  if(data.tlds.length===0){{tb.innerHTML='<tr><td colspan="3" class="muted">No unsubscribers yet</td></tr>';return;}}
-  tb.innerHTML=data.tlds.map(t=>'<tr><td>'+t.domain+'</td><td>'+t.count+'</td>'
-    +'<td class="flex">'
-    +'<a href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=plain" class="btn-sm" style="background:#43a047;color:white;text-decoration:none">Plain</a>'
-    +'<a href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=md5" class="btn-sm" style="background:#e65100;color:white;text-decoration:none">MD5</a>'
-    +'</td></tr>'
-  ).join('');
-}});
 </script>"""
 
     return _page(f"Offer: {off.name}", payload["sub"], payload["role"], "offers", content)
@@ -724,6 +732,16 @@ def unsubscribers_export(
 def generate_feed(req: GenerateFeedRequest, _=Depends(require_admin)):
     try:
         token = generate_feed_token(fernet, req.level, req.target)
+        feed_url = f"{DOWNLOAD_BASE_URL}/feed/unsubscribers/{req.target}?token={token}&level={req.level}"
+        return {"feed_url": feed_url, "token": token}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/admin/feed/regenerate")
+def regenerate_feed(req: GenerateFeedRequest, _=Depends(require_admin)):
+    try:
+        token = regenerate_feed_token(fernet, req.level, req.target)
         feed_url = f"{DOWNLOAD_BASE_URL}/feed/unsubscribers/{req.target}?token={token}&level={req.level}"
         return {"feed_url": feed_url, "token": token}
     except ValueError as e:

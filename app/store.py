@@ -437,7 +437,26 @@ def get_all_statistics(fernet: Fernet) -> dict:
 
 # ── Feed token management ──
 
+def get_feed_token(fernet: Fernet, level: str, target: str) -> str:
+    with _lock:
+        store = _load(fernet)
+        if level == "network":
+            net = (store.networks or {}).get(target)
+            return net.feed_token if net else ""
+        elif level == "offer":
+            off = (store.offers or {}).get(target)
+            return off.feed_token if off else ""
+    return ""
+
+
 def generate_feed_token(fernet: Fernet, level: str, target: str) -> str:
+    existing = get_feed_token(fernet, level, target)
+    if existing:
+        return existing
+    return regenerate_feed_token(fernet, level, target)
+
+
+def regenerate_feed_token(fernet: Fernet, level: str, target: str) -> str:
     import secrets
     token = secrets.token_hex(24)
     with _lock:
@@ -456,18 +475,6 @@ def generate_feed_token(fernet: Fernet, level: str, target: str) -> str:
             raise ValueError("Invalid level")
         _save(fernet, store)
     return token
-
-
-def get_feed_token(fernet: Fernet, level: str, target: str) -> str:
-    with _lock:
-        store = _load(fernet)
-        if level == "network":
-            net = (store.networks or {}).get(target)
-            return net.feed_token if net else ""
-        elif level == "offer":
-            off = (store.offers or {}).get(target)
-            return off.feed_token if off else ""
-    return ""
 
 
 def get_offer_unsubscribers_list(fernet: Fernet, offer_id: str) -> list[dict]:
