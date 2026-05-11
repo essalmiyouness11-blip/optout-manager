@@ -1,7 +1,7 @@
 import os
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 
 from .routes.unsubscribe import router as unsubscribe_router
 from .routes.status import router as status_router
@@ -31,6 +31,13 @@ def root():
     if user_count(fernet) == 0:
         return RedirectResponse(url="/auth/setup")
     return RedirectResponse(url="/auth/login")
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 401 and request.method == "GET":
+        return RedirectResponse(url="/auth/login")
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
 @app.get("/health")
