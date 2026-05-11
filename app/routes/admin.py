@@ -26,6 +26,8 @@ from ..models import (
 
 router = APIRouter()
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
+UNSUBSCRIBE_BASE_URL = os.environ.get("UNSUBSCRIBE_BASE_URL", BASE_URL)
+DOWNLOAD_BASE_URL = os.environ.get("DOWNLOAD_BASE_URL", BASE_URL)
 fernet = make_fernet(os.environ["SECRET_KEY"])
 
 
@@ -95,13 +97,14 @@ code{word-break:break-all;font-size:0.7rem}
 <div class="container">
 %s
 </div>
+<script>window.DL_URL='%s'</script>
 </body>
 </html>"""
 
 
 def _page(title, user_email, user_role, active_tab, content):
     tabs = _ADMIN_TABS % tuple(active_tab if i == ["generate","networks","offers","unsubscribers","dashboard","users"].index(active_tab) else "" for i in range(6))
-    return _PAGE % (title, user_email, user_role, tabs, content)
+    return _PAGE % (title, user_email, user_role, tabs, content, DOWNLOAD_BASE_URL)
 
 
 # ── Helpers ──
@@ -203,7 +206,7 @@ def generate_link(req: GenerateLinkRequest, _=Depends(get_current_user)):
         token = sign_unsubscribe_token(secret, req.level, target)
     else:
         raise HTTPException(400, "Invalid level")
-    url = f"{BASE_URL}/u?t={token}"
+    url = f"{UNSUBSCRIBE_BASE_URL}/u?t={token}"
     return GenerateLinkResponse(unsubscribe_url=url, token=token)
 
 
@@ -462,7 +465,7 @@ async function copyLink(format){{
   const res=await fetch('/admin/feed/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level:'offer',target:'{off.id}'}})}});
   if(!res.ok){{const d=await res.json();linkMsg(d.detail||'Error','err');return;}}
   const data=await res.json();
-  const url=window.location.origin+'/feed/unsubscribers/'+encodeURIComponent('{off.id}')+'/csv?token='+data.token+'&level=offer&format='+format;
+  const url=window.DL_URL+'/feed/unsubscribers/'+encodeURIComponent('{off.id}')+'/csv?token='+data.token+'&level=offer&format='+format;
   navigator.clipboard.writeText(url).then(()=>linkMsg('Suppression link copied!','ok'));
 }}
 function linkMsg(t,c){{const el=document.getElementById('link-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}}
@@ -721,7 +724,7 @@ def unsubscribers_export(
 def generate_feed(req: GenerateFeedRequest, _=Depends(require_admin)):
     try:
         token = generate_feed_token(fernet, req.level, req.target)
-        feed_url = f"{BASE_URL}/feed/unsubscribers/{req.target}?token={token}&level={req.level}"
+        feed_url = f"{DOWNLOAD_BASE_URL}/feed/unsubscribers/{req.target}?token={token}&level={req.level}"
         return {"feed_url": feed_url, "token": token}
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -795,7 +798,7 @@ async function copySuppressionLink(id,level,format){{
   const res=await fetch('/admin/feed/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level,target:id}})}});
   if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
   const data=await res.json();
-  const url=window.location.origin+'/feed/unsubscribers/'+encodeURIComponent(id)+'/csv?token='+data.token+'&level='+level+'&format='+format;
+  const url=window.DL_URL+'/feed/unsubscribers/'+encodeURIComponent(id)+'/csv?token='+data.token+'&level='+level+'&format='+format;
   navigator.clipboard.writeText(url).then(()=>msg('Suppression link copied! Link is permanent and auto-updates.','ok'));
 }}
 function msg(t,c){{const el=document.getElementById('feed-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}}
