@@ -54,19 +54,15 @@ def feed_unsubscribers_csv(
         csv = get_offer_csv_data(fernet, target, format, since)
     else:
         results = get_unsubscribers_for_target(fernet, level, target, since)
-        if format == "md5":
-            lines = ["md5_email,timestamp"]
-            for r in results:
-                md5 = r.get("md5") or ""
-                lines.append(f'{md5},{r["timestamp"]}')
-        else:
-            lines = ["email,md5,sha256,timestamp"]
-            for r in results:
-                lines.append(f'{r.get("email","")},{r.get("md5","")},{r["email_hash"]},{r["timestamp"]}')
-        csv = "\n".join(lines) + "\n"
+        lines = []
+        for r in results:
+            val = r.get("md5" if format == "md5" else "email", "")
+            if val:
+                lines.append(val)
+        csv = "\n".join(lines) + ("\n" if lines else "")
 
     from fastapi.responses import Response
-    suffix = "md5" if format == "md5" else "full"
+    suffix = "md5" if format == "md5" else "plain"
     return Response(
         content=csv,
         media_type="text/csv",

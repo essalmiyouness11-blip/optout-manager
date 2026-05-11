@@ -500,8 +500,8 @@ def unsubscribers_page(payload: dict = Depends(require_admin)):
     </div>
     <button type="submit" class="btn">Search</button>
     <select id="export-format" style="flex:0.5;min-width:80px;margin-bottom:0">
-      <option value="plain">Full CSV</option>
-      <option value="md5">MD5 Only</option>
+      <option value="plain">Plain Emails</option>
+      <option value="md5">MD5 Hashes</option>
     </select>
     <button type="button" class="btn" id="export-btn" style="background:#43a047">Export</button>
   </form>
@@ -584,26 +584,20 @@ def unsubscribers_export(
         target = "*"
     results = get_unsubscribers_for_target(fernet, level, target)
 
-    if format_ == "md5":
-        lines = ["md5_email,timestamp"]
-        for r in results:
-            md5 = r.get("md5") or ""
-            if not md5 and r.get("email"):
+    lines = []
+    for r in results:
+        if format_ == "md5":
+            val = r.get("md5") or ""
+            if not val and r.get("email"):
                 from ..crypto import md5_email
-                md5 = md5_email(r["email"])
-            lines.append(f'{md5},{r["timestamp"]}')
-    else:
-        lines = ["email,md5,sha256,timestamp"]
-        for r in results:
-            email = r.get("email") or ""
-            md5 = r.get("md5") or ""
-            if not md5 and email:
-                from ..crypto import md5_email
-                md5 = md5_email(email)
-            lines.append(f'{email},{md5},{r["email_hash"]},{r["timestamp"]}')
+                val = md5_email(r["email"])
+        else:
+            val = r.get("email") or ""
+        if val:
+            lines.append(val)
 
-    csv = "\n".join(lines) + "\n"
-    suffix = "md5" if format_ == "md5" else "full"
+    csv = "\n".join(lines) + ("\n" if lines else "")
+    suffix = "md5" if format_ == "md5" else "plain"
     return Response(
         content=csv,
         media_type="text/csv",
@@ -647,19 +641,18 @@ def dashboard_page(payload: dict = Depends(require_admin)):
     net_rows = "".join(
         f'<tr><td>{n["name"]}</td><td>{n["id"]}</td><td>{n["count"]}</td>'
         f'<td class="flex">'
-        f'<button class="btn-sm" onclick="copyFeed(\'{n["id"]}\',\'network\')">Feed</button>'
-        f'<button class="btn-sm" style="background:#43a047" onclick="copyCsvFeed(\'{n["id"]}\',\'network\',\'plain\')">CSV</button>'
-        f'<button class="btn-sm" style="background:#e65100" onclick="copyCsvFeed(\'{n["id"]}\',\'network\',\'md5\')">MD5</button>'
+        f'<button class="btn-sm" onclick="copyFeed(\'{n["id"]}\',\'network\')">JSON</button>'
+        f'<button class="btn-sm" style="background:#43a047" onclick="copySuppressionLink(\'{n["id"]}\',\'network\',\'plain\')">Plain</button>'
+        f'<button class="btn-sm" style="background:#e65100" onclick="copySuppressionLink(\'{n["id"]}\',\'network\',\'md5\')">MD5</button>'
         f'</td></tr>'
         for n in data["networks"]["details"]
     )
     off_rows = "".join(
         f'<tr><td>{o["name"]}</td><td>{o["id"]}</td><td>{o["network"]}</td><td>{o["count"]}</td>'
         f'<td class="flex">'
-        f'<button class="btn-sm" onclick="copyFeed(\'{o["id"]}\',\'offer\')">Feed</button>'
-        f'<button class="btn-sm" style="background:#43a047" onclick="copyCsvFeed(\'{o["id"]}\',\'offer\',\'plain\')">CSV</button>'
-        f'<button class="btn-sm" style="background:#e65100" onclick="copyCsvFeed(\'{o["id"]}\',\'offer\',\'md5\')">MD5</button>'
-        f'<button class="btn-sm" style="background:#6a1b9a" onclick="downloadCsv(\'{o["id"]}\',\'plain\')">DL</button>'
+        f'<button class="btn-sm" onclick="copyFeed(\'{o["id"]}\',\'offer\')">JSON</button>'
+        f'<button class="btn-sm" style="background:#43a047" onclick="copySuppressionLink(\'{o["id"]}\',\'offer\',\'plain\')">Plain</button>'
+        f'<button class="btn-sm" style="background:#e65100" onclick="copySuppressionLink(\'{o["id"]}\',\'offer\',\'md5\')">MD5</button>'
         f'</td></tr>'
         for o in data["offers"]["details"]
     )
@@ -669,13 +662,15 @@ def dashboard_page(payload: dict = Depends(require_admin)):
   <p style="font-size:1.5rem;font-weight:700;color:#d32f2f">{data["global"]["count"]}</p>
 </div>
 <div class="card">
-  <h2>Network Unsubscribers</h2>
-  <table><thead><tr><th>Network</th><th>ID</th><th>Count</th><th></th></tr></thead>
+  <h2>Network Suppression Links</h2>
+  <p class="muted">Links are permanent and auto-update when new unsubscribers are added</p>
+  <table><thead><tr><th>Network</th><th>ID</th><th>Count</th><th>Links</th></tr></thead>
   <tbody>{net_rows or '<tr><td colspan="4" class="muted">No data</td></tr>'}</tbody></table>
 </div>
 <div class="card">
-  <h2>Offer Unsubscribers</h2>
-  <table><thead><tr><th>Offer</th><th>ID</th><th>Network</th><th>Count</th><th></th></tr></thead>
+  <h2>Offer Suppression Links</h2>
+  <p class="muted">Each link is unique per offer, stays the same, always returns latest unsubscribers</p>
+  <table><thead><tr><th>Offer</th><th>ID</th><th>Network</th><th>Count</th><th>Links</th></tr></thead>
   <tbody>{off_rows or '<tr><td colspan="5" class="muted">No data</td></tr>'}</tbody></table>
 </div>
 <div id="feed-msg" class="msg"></div>
@@ -684,19 +679,16 @@ async function copyFeed(id,level){{
   const res=await fetch('/admin/feed/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level,target:id}})}});
   if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
   const data=await res.json();
-  navigator.clipboard.writeText(data.feed_url).then(()=>msg('JSON Feed URL copied to clipboard!','ok'));
+  navigator.clipboard.writeText(data.feed_url).then(()=>msg('JSON feed URL copied!','ok'));
 }}
-async function copyCsvFeed(id,level,format){{
+async function copySuppressionLink(id,level,format){{
   const res=await fetch('/admin/feed/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level,target:id}})}});
   if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
   const data=await res.json();
   const url=window.location.origin+'/feed/unsubscribers/'+encodeURIComponent(id)+'/csv?token='+data.token+'&level='+level+'&format='+format;
-  navigator.clipboard.writeText(url).then(()=>msg('CSV Feed URL copied! Auto-updating suppression list.','ok'));
+  navigator.clipboard.writeText(url).then(()=>msg('Suppression link copied! Link is permanent and auto-updates.','ok'));
 }}
-function downloadCsv(id,format){{
-  window.location.href='/admin/offers/'+encodeURIComponent(id)+'/unsubscribers/csv?format='+format;
-}}
-function msg(t,c){{const el=document.getElementById('feed-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',4000)}}
+function msg(t,c){{const el=document.getElementById('feed-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}}
 </script>"""
     return _page("Dashboard", payload["sub"], payload["role"], "dashboard", content)
 

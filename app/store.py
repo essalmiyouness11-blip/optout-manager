@@ -484,12 +484,9 @@ def get_offer_csv_data(fernet: Fernet, offer_id: str, format: str = "plain", sin
     records = get_offer_unsubscribers_list(fernet, offer_id)
     if since:
         records = [r for r in records if r.get("timestamp", 0) > since]
-    if format == "md5":
-        lines = ["md5_email,timestamp"]
-        for r in records:
-            lines.append(f'{r.get("md5", "")},{r.get("timestamp", 0)}')
-    else:
-        lines = ["email,md5,sha256,timestamp"]
-        for r in records:
-            lines.append(f'{r.get("email", "")},{r.get("md5", "")},{r.get("sha256", "")},{r.get("timestamp", 0)}')
-    return "\n".join(lines) + "\n"
+    lines = []
+    for r in records:
+        val = r.get("md5" if format == "md5" else "email", "")
+        if val:
+            lines.append(val)
+    return "\n".join(lines) + ("\n" if lines else "")
