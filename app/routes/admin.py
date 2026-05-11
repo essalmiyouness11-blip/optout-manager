@@ -14,6 +14,7 @@ from ..store import (
     get_unsubscribers_for_target,
     generate_feed_token,
     get_offer_csv_data,
+    get_offer_csv_data_by_tld,
     get_offer_statistics,
 )
 from ..models import (
@@ -396,6 +397,24 @@ def offer_stats_json(offer_id: str, _=Depends(require_admin)):
     }
 
 
+@router.get("/admin/offers/{offer_id}/export-tld/{domain:path}")
+def offer_tld_csv(
+    offer_id: str,
+    domain: str,
+    format: str = "plain",
+    _=Depends(require_admin),
+):
+    from fastapi.responses import Response
+    csv = get_offer_csv_data_by_tld(fernet, offer_id, domain, format)
+    suffix = "md5" if format == "md5" else "plain"
+    safe_domain = domain.replace(".", "_").replace("@", "_")
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=offer_{offer_id}_{safe_domain}_{suffix}.csv"},
+    )
+
+
 @router.get("/admin/offers/{offer_id}", response_class=HTMLResponse)
 def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
     off = get_offer(fernet, offer_id)
@@ -430,8 +449,8 @@ def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
   <p style="font-size:1.5rem;font-weight:700;color:#d32f2f" id="stat-total">Loading...</p>
   <p class="muted">Total unsubscribed emails</p>
   <h3 style="margin-top:1rem;font-size:1rem">Per TLD / Email Domain</h3>
-  <table><thead><tr><th>Domain</th><th>Count</th></tr></thead>
-    <tbody id="tld-body"><tr><td colspan="2" class="muted">Loading...</td></tr></tbody>
+  <table><thead><tr><th>Domain</th><th>Count</th><th>Download</th></tr></thead>
+    <tbody id="tld-body"><tr><td colspan="3" class="muted">Loading...</td></tr></tbody>
   </table>
 </div>
 
@@ -448,8 +467,13 @@ function linkMsg(t,c){{const el=document.getElementById('link-msg');el.textConte
 fetch('/admin/offers/{off.id}/stats').then(r=>r.json()).then(data=>{{
   document.getElementById('stat-total').textContent=data.total;
   const tb=document.getElementById('tld-body');
-  if(data.tlds.length===0){{tb.innerHTML='<tr><td colspan="2" class="muted">No unsubscribers yet</td></tr>';return;}}
-  tb.innerHTML=data.tlds.map(t=>'<tr><td>'+t.domain+'</td><td>'+t.count+'</td></tr>').join('');
+  if(data.tlds.length===0){{tb.innerHTML='<tr><td colspan="3" class="muted">No unsubscribers yet</td></tr>';return;}}
+  tb.innerHTML=data.tlds.map(t=>'<tr><td>'+t.domain+'</td><td>'+t.count+'</td>'
+    +'<td class="flex">'
+    +'<a href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=plain" class="btn-sm" style="background:#43a047;color:white;text-decoration:none">Plain</a>'
+    +'<a href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=md5" class="btn-sm" style="background:#e65100;color:white;text-decoration:none">MD5</a>'
+    +'</td></tr>'
+  ).join('');
 }});
 </script>"""
 
