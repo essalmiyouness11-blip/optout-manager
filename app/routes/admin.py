@@ -13,6 +13,7 @@ from ..store import (
     get_dashboard, get_all_statistics,
     get_unsubscribers_for_target,
     generate_feed_token,
+    get_offer_csv_data,
 )
 from ..models import (
     GenerateLinkRequest, GenerateLinkResponse, GenerateFeedRequest,
@@ -622,6 +623,22 @@ def generate_feed(req: GenerateFeedRequest, _=Depends(require_admin)):
         raise HTTPException(400, str(e))
 
 
+@router.get("/admin/offers/{offer_id}/unsubscribers/csv")
+def offer_unsubscribers_csv(
+    offer_id: str,
+    format: str = "plain",
+    _=Depends(require_admin),
+):
+    from fastapi.responses import Response
+    csv = get_offer_csv_data(fernet, offer_id, format)
+    suffix = "md5" if format == "md5" else "full"
+    return Response(
+        content=csv,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=offer_{offer_id}_unsubscribers_{suffix}.csv"},
+    )
+
+
 # ── Enhanced dashboard ──
 
 @router.get("/admin/dashboard", response_class=HTMLResponse)
@@ -629,12 +646,21 @@ def dashboard_page(payload: dict = Depends(require_admin)):
     data = get_all_statistics(fernet)
     net_rows = "".join(
         f'<tr><td>{n["name"]}</td><td>{n["id"]}</td><td>{n["count"]}</td>'
-        f'<td><button class="btn-sm" onclick="copyFeed(\'{n["id"]}\',\'network\')">Feed</button></td></tr>'
+        f'<td class="flex">'
+        f'<button class="btn-sm" onclick="copyFeed(\'{n["id"]}\',\'network\')">Feed</button>'
+        f'<button class="btn-sm" style="background:#43a047" onclick="copyCsvFeed(\'{n["id"]}\',\'network\',\'plain\')">CSV</button>'
+        f'<button class="btn-sm" style="background:#e65100" onclick="copyCsvFeed(\'{n["id"]}\',\'network\',\'md5\')">MD5</button>'
+        f'</td></tr>'
         for n in data["networks"]["details"]
     )
     off_rows = "".join(
         f'<tr><td>{o["name"]}</td><td>{o["id"]}</td><td>{o["network"]}</td><td>{o["count"]}</td>'
-        f'<td><button class="btn-sm" onclick="copyFeed(\'{o["id"]}\',\'offer\')">Feed</button></td></tr>'
+        f'<td class="flex">'
+        f'<button class="btn-sm" onclick="copyFeed(\'{o["id"]}\',\'offer\')">Feed</button>'
+        f'<button class="btn-sm" style="background:#43a047" onclick="copyCsvFeed(\'{o["id"]}\',\'offer\',\'plain\')">CSV</button>'
+        f'<button class="btn-sm" style="background:#e65100" onclick="copyCsvFeed(\'{o["id"]}\',\'offer\',\'md5\')">MD5</button>'
+        f'<button class="btn-sm" style="background:#6a1b9a" onclick="downloadCsv(\'{o["id"]}\',\'plain\')">DL</button>'
+        f'</td></tr>'
         for o in data["offers"]["details"]
     )
     content = f"""
@@ -658,7 +684,17 @@ async function copyFeed(id,level){{
   const res=await fetch('/admin/feed/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level,target:id}})}});
   if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
   const data=await res.json();
-  navigator.clipboard.writeText(data.feed_url).then(()=>msg('Feed URL copied to clipboard! Click Share on the feed endpoint to share with your ESP.','ok'));
+  navigator.clipboard.writeText(data.feed_url).then(()=>msg('JSON Feed URL copied to clipboard!','ok'));
+}}
+async function copyCsvFeed(id,level,format){{
+  const res=await fetch('/admin/feed/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level,target:id}})}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  const data=await res.json();
+  const url=window.location.origin+'/feed/unsubscribers/'+encodeURIComponent(id)+'/csv?token='+data.token+'&level='+level+'&format='+format;
+  navigator.clipboard.writeText(url).then(()=>msg('CSV Feed URL copied! Auto-updating suppression list.','ok'));
+}}
+function downloadCsv(id,format){{
+  window.location.href='/admin/offers/'+encodeURIComponent(id)+'/unsubscribers/csv?format='+format;
 }}
 function msg(t,c){{const el=document.getElementById('feed-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',4000)}}
 </script>"""

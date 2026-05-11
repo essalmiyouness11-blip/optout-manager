@@ -72,10 +72,12 @@ def record_unsubscribe(
         entry = _ensure_entry(store, email_hash)
         now = int(datetime.now(timezone.utc).timestamp())
 
+        md5_val = ""
         if email:
             entry.email = email
             from .crypto import md5_email
-            entry.md5 = md5_email(email)
+            md5_val = md5_email(email)
+            entry.md5 = md5_val
 
         if level == "global":
             entry.global_ = True
@@ -85,6 +87,18 @@ def record_unsubscribe(
             entry.networks[target] = now
         elif level == "offer":
             entry.offers[target] = now
+            # also store email/MD5 in the offer's own list
+            if email and target in (store.offers or {}):
+                offer = store.offers[target]
+                # avoid duplicates by sha256
+                existing = {r.get("sha256", "") for r in offer.unsubscribers}
+                if email_hash not in existing:
+                    offer.unsubscribers.append({
+                        "email": email,
+                        "md5": md5_val,
+                        "sha256": email_hash,
+                        "timestamp": now,
+                    })
 
         hist_entry = {"level": level, "target": target, "at": now}
         if target_name:
@@ -455,3 +469,27 @@ def get_feed_token(fernet: Fernet, level: str, target: str) -> str:
             off = (store.offers or {}).get(target)
             return off.feed_token if off else ""
     return ""
+
+
+def get_offer_unsubscribers_list(fernet: Fernet, offer_id: str) -> list[dict]:
+    with _lock:
+        store = _load(fernet)
+        off = (store.offers or {}).get(offer_id)
+        if not off:
+            return []
+        return list(off.unsubscribers)
+
+
+def get_offer_csv_data(fernet: Fernet, offer_id: str, format: str = "plain", since: int = 0) -> str:
+    records = get_offer_unsubscribers_list(fernet, offer_id)
+    if since:
+        records = [r for r in records if r.get("timestamp", 0) > since]
+    if format == "md5":
+        lines = ["md5_email,timestamp"]
+        for r in records:
+            lines.append(f'{r.get("md5", "")},{r.get("timestamp", 0)}')
+    else:
+        lines = ["email,md5,sha256,timestamp"]
+        for r in records:
+            lines.append(f'{r.get("email", "")},{r.get("md5", "")},{r.get("sha256", "")},{r.get("timestamp", 0)}')
+    return "\n".join(lines) + "\n"

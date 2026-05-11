@@ -34,10 +34,11 @@ class OfferEntry(BaseModel):
     network_id: str
     feed_token: str = ""
     created_at: int = 0
+    unsubscribers: list[dict] = Field(default_factory=list)
 
 
 class SuppressionStore(BaseModel):
-    version: int = 3
+    version: int = 4
     users: dict[str, UserEntry] = Field(default_factory=dict)
     suppressions: dict[str, SuppressionEntry] = Field(default_factory=dict)
     networks: dict[str, AffiliateNetworkEntry] = Field(default_factory=dict)
@@ -156,6 +157,7 @@ class FeedResponse(BaseModel):
 class GenerateFeedRequest(BaseModel):
     level: str = Field(pattern=r"^(network|offer)$")
     target: str
+
 
 
 class UnsubscriberExportRecord(BaseModel):
