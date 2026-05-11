@@ -31,6 +31,17 @@ DOWNLOAD_BASE_URL = os.environ.get("DOWNLOAD_BASE_URL", BASE_URL)
 fernet = make_fernet(os.environ["SECRET_KEY"])
 
 
+def ago(ts: int) -> str:
+    now = int(__import__("time").time())
+    diff = now - ts
+    if diff < 60: return "just now"
+    if diff < 3600: return f"{diff // 60}m ago"
+    if diff < 86400: return f"{diff // 3600}h ago"
+    if diff < 604800: return f"{diff // 86400}d ago"
+    if diff < 2592000: return f"{diff // 604800}w ago"
+    return f"{diff // 2592000}mo ago"
+
+
 # ── Layout ──
 
 _ADMIN_TABS = """
@@ -609,89 +620,207 @@ def delete_user_endpoint(email: str, _=Depends(require_admin)):
 
 # ── Unsubscribers page ──
 
+@router.get("/admin/unsubscribers/data/offer/{offer_id}")
+def unsubscribers_offer_data(offer_id: str, _=Depends(require_admin)):
+    from ..store import get_offer_unsubscribers_list
+    data = get_offer_unsubscribers_list(fernet, offer_id)
+    return data
+
+
 @router.get("/admin/unsubscribers", response_class=HTMLResponse)
 def unsubscribers_page(payload: dict = Depends(require_admin)):
+    from ..store import get_offers_summary
+    offers = get_offers_summary(fernet)
     nets = list_networks(fernet)
     offs = list_offers(fernet)
     net_opts = "".join(f'<option value="{n.id}">{n.name}</option>' for n in nets)
     off_opts = "".join(f'<option value="{o.id}" data-net="{o.network_id}">{o.name}</option>' for o in offs)
 
-    content = f"""
-<div class="card">
-  <h2>Filter Unsubscribers</h2>
-  <form id="filter-form" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end">
-    <div style="flex:1;min-width:120px">
-      <label class="muted">Type</label>
-      <select id="filter-level">
-        <option value="offer">Offer</option>
-        <option value="network">Network</option>
-        <option value="global">Global</option>
-      </select>
+    off_rows = "".join(
+        f"""<tr class="offer-row" data-offer="{o["id"]}">
+  <td>{o["network_name"]}</td>
+  <td><a href="/admin/offers/{o["id"]}" style="color:#1976d2;text-decoration:none;font-weight:600">{o["name"]}</a></td>
+  <td><code style="font-size:0.75rem">{o["id"]}</code></td>
+  <td style="font-weight:700;color:#d32f2f">{o["count"]}</td>
+  <td style="font-size:0.8rem">{f'<span title="{ts}">{ago(ts)}</span>' if (ts:=o["last_unsubscribed"]) else '<span class="muted">-</span>'}</td>
+  <td class="flex" style="gap:0.25rem">
+    <a class="btn-sm" href="/admin/offers/{o["id"]}">Details</a>
+    <a class="btn-sm" style="background:#43a047;color:white;text-decoration:none" href="/admin/offers/{o["id"]}/unsubscribers/csv?format=plain">Plain</a>
+    <a class="btn-sm" style="background:#e65100;color:white;text-decoration:none" href="/admin/offers/{o["id"]}/unsubscribers/csv?format=md5">MD5</a>
+    <button class="btn-sm" style="background:#6a1b9a;color:white;border:none;cursor:pointer" onclick="toggleExpand(this,'{o["id"]}')">Expand</button>
+  </td>
+</tr>
+<tr class="expand-row" id="expand-{o["id"]}" style="display:none">
+  <td colspan="6" style="padding:0">
+    <div class="expand-content" style="padding:0.75rem 1rem;background:#fafafa;border-top:1px solid #e0e0e0">
+      <div id="expand-loading-{o["id"]}" style="text-align:center;padding:1rem;color:#999">Loading...</div>
+      <div id="expand-body-{o["id"]}" style="display:none"></div>
     </div>
-    <div style="flex:1;min-width:150px" id="filter-net-div">
-      <label class="muted">Network</label>
-      <select id="filter-net">{net_opts}</select>
+  </td>
+</tr>"""
+        for o in offers
+    )
+
+    summary = f"""<div class="card" id="summary-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:-0.5rem">
+    <h2 style="margin:0">Offers Overview</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+      <input type="text" id="offer-filter" placeholder="Search offers..." style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;min-width:160px">
+      <span id="offer-count" class="muted" style="font-size:0.85rem">{len(offers)} offers</span>
     </div>
-    <div style="flex:1;min-width:150px" id="filter-off-div">
-      <label class="muted">Offer</label>
-      <select id="filter-off">{off_opts}</select>
-    </div>
-    <button type="submit" class="btn">Search</button>
-    <select id="export-format" style="flex:0.5;min-width:80px;margin-bottom:0">
-      <option value="plain">Plain Emails</option>
-      <option value="md5">MD5 Hashes</option>
-    </select>
-    <button type="button" class="btn" id="export-btn" style="background:#43a047">Export</button>
-  </form>
-</div>
-<div class="card">
-  <h2>Results <span id="result-count" class="muted"></span></h2>
-  <div id="loading" style="text-align:center;padding:2rem;color:#999">Select filters and click Search</div>
-  <div id="result-table" style="display:none">
-    <div class="table-wrap"><table><thead><tr><th>Email</th><th>MD5</th><th>SHA256</th><th>Date</th></tr></thead>
-    <tbody id="result-body"></tbody></table></div>
   </div>
-</div>
+  <div class="table-wrap" style="margin-top:0.75rem"><table>
+    <thead><tr>
+      <th>Network</th>
+      <th>Offer Name</th>
+      <th>ID</th>
+      <th>Unsubscribers</th>
+      <th>Last Unsubscribed</th>
+      <th>Actions</th>
+    </tr></thead>
+    <tbody id="offer-tbody">{off_rows or '<tr><td colspan="6" class="muted">No offers created yet</td></tr>'}</tbody>
+  </table></div>
+</div>"""
+
+    detail_section = f"""<div class="card" id="detail-card">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+    <h2 style="margin:0">Detailed Search</h2>
+    <button class="btn-sm" onclick="toggleDetail()" id="detail-toggle" style="background:#9e9e9e;color:white;border:none;cursor:pointer">Show</button>
+  </div>
+  <div id="detail-body" style="display:none;margin-top:1rem">
+    <form id="filter-form" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end">
+      <div style="flex:1;min-width:120px">
+        <label class="muted">Type</label>
+        <select id="filter-level">
+          <option value="offer">Offer</option>
+          <option value="network">Network</option>
+          <option value="global">Global</option>
+        </select>
+      </div>
+      <div style="flex:1;min-width:150px" id="filter-net-div">
+        <label class="muted">Network</label>
+        <select id="filter-net">{net_opts}</select>
+      </div>
+      <div style="flex:1;min-width:150px" id="filter-off-div">
+        <label class="muted">Offer</label>
+        <select id="filter-off">{off_opts}</select>
+      </div>
+      <button type="submit" class="btn">Search</button>
+      <select id="export-format" style="flex:0.5;min-width:80px;margin-bottom:0">
+        <option value="plain">Plain Emails</option>
+        <option value="md5">MD5 Hashes</option>
+      </select>
+      <button type="button" class="btn" id="export-btn" style="background:#43a047">Export</button>
+    </form>
+    <div id="loading" style="text-align:center;padding:2rem;color:#999;display:none">Loading...</div>
+    <div id="result-table" style="display:none;margin-top:1rem">
+      <p style="margin:0 0 0.5rem"><strong>Results</strong> <span id="result-count" class="muted"></span></p>
+      <div class="table-wrap"><table><thead><tr><th>Email</th><th>MD5</th><th>SHA256</th><th>Date</th></tr></thead>
+      <tbody id="result-body"></tbody></table></div>
+    </div>
+    <div id="no-results" style="display:none;text-align:center;padding:1.5rem;color:#999">No results. Select filters and click Search.</div>
+  </div>
+</div>"""
+
+    content = summary + detail_section + """
 <script>
-document.getElementById('filter-level').addEventListener('change',function(){{
+// ── Offer filter ──
+document.getElementById('offer-filter').addEventListener('input', function() {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('.offer-row').forEach(r => {
+    const match = r.cells[1].textContent.toLowerCase().includes(q) || r.cells[2].textContent.toLowerCase().includes(q);
+    r.style.display = match ? '' : 'none';
+    const expand = document.getElementById('expand-' + r.dataset.offer);
+    if (expand) expand.style.display = match && expand.style.display !== 'none' ? '' : 'none';
+  });
+  document.getElementById('offer-count').textContent = document.querySelectorAll('.offer-row:not([style*=\"display:none\"])').length + ' offers';
+});
+
+// ── Expand / collapse offer rows ──
+async function toggleExpand(btn, offerId) {
+  const row = document.getElementById('expand-' + offerId);
+  if (row.style.display !== 'none') {
+    row.style.display = 'none';
+    btn.textContent = 'Expand';
+    return;
+  }
+  row.style.display = '';
+  btn.textContent = 'Collapse';
+  document.getElementById('expand-loading-' + offerId).style.display = '';
+  document.getElementById('expand-body-' + offerId).style.display = 'none';
+  try {
+    const res = await fetch('/admin/unsubscribers/data/offer/' + encodeURIComponent(offerId));
+    const data = await res.json();
+    document.getElementById('expand-loading-' + offerId).style.display = 'none';
+    const body = document.getElementById('expand-body-' + offerId);
+    if (data.length === 0) {
+      body.innerHTML = '<p class="muted" style="text-align:center;padding:0.5rem">No unsubscribers for this offer</p>';
+    } else {
+      body.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Email</th><th>MD5</th><th>SHA256</th><th>Date</th></tr></thead><tbody>' +
+        data.slice(0, 50).map(r =>
+          '<tr><td style="font-size:0.8rem">' + (r.email || '') + '</td><td style="font-family:monospace;font-size:0.7rem">' + (r.md5 || '') + '</td><td style="font-family:monospace;font-size:0.7rem">' + r.sha256 + '</td><td style="font-size:0.8rem">' + new Date(r.timestamp * 1000).toLocaleString() + '</td></tr>'
+        ).join('') + '</tbody></table></div>' +
+        (data.length > 50 ? '<p class="muted" style="text-align:center;font-size:0.8rem;margin-top:0.5rem">Showing first 50 of ' + data.length + ' records</p>' : '');
+    }
+    body.style.display = '';
+  } catch (e) {
+    document.getElementById('expand-loading-' + offerId).textContent = 'Failed to load';
+  }
+}
+
+// ── Detail search toggle ──
+function toggleDetail() {
+  const body = document.getElementById('detail-body');
+  const btn = document.getElementById('detail-toggle');
+  if (body.style.display === 'none') {
+    body.style.display = '';
+    btn.textContent = 'Hide';
+  } else {
+    body.style.display = 'none';
+    btn.textContent = 'Show';
+  }
+}
+
+// ── Detail search logic (existing) ──
+document.getElementById('filter-level').addEventListener('change',function(){
   const v=this.value;
   document.getElementById('filter-net-div').style.display=v==='global'?'none':'block';
   document.getElementById('filter-off-div').style.display=v==='offer'?'block':'none';
-}});
-document.getElementById('filter-form').addEventListener('submit',async function(e){{
-  e.preventDefault();search();}});
-document.getElementById('export-btn').addEventListener('click',function(){{
+});
+document.getElementById('filter-form').addEventListener('submit',async function(e){
+  e.preventDefault();searchDetail();});
+document.getElementById('export-btn').addEventListener('click',function(){
   const level=document.getElementById('filter-level').value;
   const format=document.getElementById('export-format').value;
-  const params=new URLSearchParams({{level,format}});
+  const params=new URLSearchParams({level,format});
   if(level==='network') params.set('network_id',document.getElementById('filter-net').value);
   if(level==='offer') params.set('offer_id',document.getElementById('filter-off').value);
   window.location.href='/admin/unsubscribers/export?'+params.toString();
-}});
-async function search(){{
+});
+async function searchDetail(){
   const level=document.getElementById('filter-level').value;
-  const params=new URLSearchParams({{level}});
+  const params=new URLSearchParams({level});
   if(level==='network') params.set('target',document.getElementById('filter-net').value);
   if(level==='offer') params.set('target',document.getElementById('filter-off').value);
   if(level==='global') params.set('target','*');
-  document.getElementById('loading').textContent='Loading...';
-  document.getElementById('loading').style.display='block';
+  const loading=document.getElementById('loading');
+  loading.style.display='block';
   document.getElementById('result-table').style.display='none';
+  document.getElementById('no-results').style.display='none';
   const res=await fetch('/admin/unsubscribers/data?'+params.toString());
   const data=await res.json();
-  document.getElementById('loading').style.display='none';
-  if(data.length===0){{
-    document.getElementById('loading').textContent='No results';
-    document.getElementById('loading').style.display='block';
+  loading.style.display='none';
+  if(data.length===0){
+    document.getElementById('no-results').style.display='block';
     document.getElementById('result-count').textContent='';
     return;
-  }}
+  }
   document.getElementById('result-count').textContent='('+data.length+' records)';
   document.getElementById('result-body').innerHTML=data.map(r=>
     '<tr><td style="font-size:0.8rem">'+(r.email||'')+'</td><td style="font-family:monospace;font-size:0.7rem">'+(r.md5||'')+'</td><td style="font-family:monospace;font-size:0.7rem">'+r.email_hash+'</td><td style="font-size:0.8rem">'+new Date(r.timestamp*1000).toLocaleString()+'</td></tr>'
   ).join('');
   document.getElementById('result-table').style.display='block';
-}}
+}
 </script>"""
     return _page("Unsubscribers", payload["sub"], payload["role"], "unsubscribers", content)
 

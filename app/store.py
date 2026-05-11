@@ -514,6 +514,36 @@ def get_offer_statistics(fernet: Fernet, offer_id: str) -> dict:
     }
 
 
+def get_offers_summary(fernet: Fernet) -> list[dict]:
+    with _lock:
+        store = _load(fernet)
+
+    networks = {n.id: n.name for n in (store.networks or {}).values()}
+
+    offer_counts: dict[str, int] = {}
+    offer_last_ts: dict[str, int] = {}
+
+    for entry in store.suppressions.values():
+        for oid, ts in entry.offers.items():
+            offer_counts[oid] = offer_counts.get(oid, 0) + 1
+            if ts > offer_last_ts.get(oid, 0):
+                offer_last_ts[oid] = ts
+
+    results = []
+    for o in (store.offers or {}).values():
+        results.append({
+            "id": o.id,
+            "name": o.name,
+            "network_id": o.network_id,
+            "network_name": networks.get(o.network_id, ""),
+            "count": offer_counts.get(o.id, 0),
+            "last_unsubscribed": offer_last_ts.get(o.id, 0),
+        })
+
+    results.sort(key=lambda r: r["count"], reverse=True)
+    return results
+
+
 def get_offer_csv_data_by_tld(fernet: Fernet, offer_id: str, domain: str, format: str = "plain") -> str:
     records = get_offer_unsubscribers_list(fernet, offer_id)
     lines = []
