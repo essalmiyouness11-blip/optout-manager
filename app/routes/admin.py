@@ -14,6 +14,7 @@ from ..store import (
     get_unsubscribers_for_target,
     generate_feed_token,
     get_offer_csv_data,
+    get_offer_statistics,
 )
 from ..models import (
     GenerateLinkRequest, GenerateLinkResponse, GenerateFeedRequest,
@@ -298,6 +299,7 @@ def offers_page(payload: dict = Depends(require_admin)):
     rows = "".join(
         f'<tr><td>{o.id}</td><td>{o.name}</td><td>{o.network_id}</td><td>{o.created_at}</td>'
         f'<td class="flex">'
+        f'<a href="/admin/offers/{o.id}" class="btn-sm" style="background:#6a1b9a;color:white;text-decoration:none">Details</a>'
         f'<button class="btn-sm" onclick="editOff(\'{o.id}\',\'{o.name}\')">Edit</button>'
         f'<button class="btn-del" onclick="delOff(\'{o.id}\')">Delete</button></td></tr>'
         for o in offs
@@ -371,6 +373,87 @@ def delete_offer_endpoint(offer_id: str, _=Depends(require_admin)):
     if not delete_offer(fernet, offer_id):
         raise HTTPException(404, "Offer not found")
     return {"status": "deleted"}
+
+
+# ── Offer Details ──
+
+@router.get("/admin/offers/{offer_id}/stats")
+def offer_stats_json(offer_id: str, _=Depends(require_admin)):
+    off = get_offer(fernet, offer_id)
+    if not off:
+        raise HTTPException(404, "Offer not found")
+    net = get_network(fernet, off.network_id)
+    net_name = net.name if net else ""
+    stats = get_offer_statistics(fernet, offer_id)
+    return {
+        "id": off.id,
+        "name": off.name,
+        "network_id": off.network_id,
+        "network_name": net_name,
+        "created_at": off.created_at,
+        "total": stats["total"],
+        "tlds": stats["tlds"],
+    }
+
+
+@router.get("/admin/offers/{offer_id}", response_class=HTMLResponse)
+def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
+    off = get_offer(fernet, offer_id)
+    if not off:
+        raise HTTPException(404, "Offer not found")
+    net = get_network(fernet, off.network_id)
+    net_name = net.name if net else ""
+
+    content = f"""
+<p><a href="/admin/offers" style="color:#1976d2;text-decoration:none;font-size:0.85rem">&larr; Back to Offers</a></p>
+<div class="card">
+  <h2>Offer: {off.name}</h2>
+  <table>
+    <tr><td><strong>ID</strong></td><td>{off.id}</td></tr>
+    <tr><td><strong>Network</strong></td><td>{net_name} ({off.network_id})</td></tr>
+    <tr><td><strong>Created</strong></td><td>{off.created_at}</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Suppression Links <span class="muted">(permanent, auto-update)</span></h2>
+  <p style="margin-bottom:0.75rem;font-size:0.85rem;color:#666">These links never change and always return the latest unsubscriber list.</p>
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+    <button class="btn" style="background:#43a047" onclick="copyLink('plain')">Copy Plain TEXT Link</button>
+    <button class="btn" style="background:#e65100" onclick="copyLink('md5')">Copy MD5 Link</button>
+  </div>
+  <div id="link-msg" style="margin-top:0.5rem" class="msg"></div>
+</div>
+
+<div class="card">
+  <h2>Unsubscriber Statistics</h2>
+  <p style="font-size:1.5rem;font-weight:700;color:#d32f2f" id="stat-total">Loading...</p>
+  <p class="muted">Total unsubscribed emails</p>
+  <h3 style="margin-top:1rem;font-size:1rem">Per TLD / Email Domain</h3>
+  <table><thead><tr><th>Domain</th><th>Count</th></tr></thead>
+    <tbody id="tld-body"><tr><td colspan="2" class="muted">Loading...</td></tr></tbody>
+  </table>
+</div>
+
+<script>
+async function copyLink(format){{
+  const res=await fetch('/admin/feed/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level:'offer',target:'{off.id}'}})}});
+  if(!res.ok){{const d=await res.json();linkMsg(d.detail||'Error','err');return;}}
+  const data=await res.json();
+  const url=window.location.origin+'/feed/unsubscribers/'+encodeURIComponent('{off.id}')+'/csv?token='+data.token+'&level=offer&format='+format;
+  navigator.clipboard.writeText(url).then(()=>linkMsg('Suppression link copied!','ok'));
+}}
+function linkMsg(t,c){{const el=document.getElementById('link-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}}
+
+fetch('/admin/offers/{off.id}/stats').then(r=>r.json()).then(data=>{{
+  document.getElementById('stat-total').textContent=data.total;
+  const tb=document.getElementById('tld-body');
+  if(data.tlds.length===0){{tb.innerHTML='<tr><td colspan="2" class="muted">No unsubscribers yet</td></tr>';return;}}
+  tb.innerHTML=data.tlds.map(t=>'<tr><td>'+t.domain+'</td><td>'+t.count+'</td></tr>').join('');
+}});
+</script>"""
+
+    return _page(f"Offer: {off.name}", payload["sub"], payload["role"], "offers", content)
 
 
 # ── Dashboard ──
@@ -648,7 +731,7 @@ def dashboard_page(payload: dict = Depends(require_admin)):
         for n in data["networks"]["details"]
     )
     off_rows = "".join(
-        f'<tr><td>{o["name"]}</td><td>{o["id"]}</td><td>{o["network"]}</td><td>{o["count"]}</td>'
+        f'<tr><td><a href="/admin/offers/{o["id"]}" style="color:#1976d2;text-decoration:none;font-weight:600">{o["name"]}</a></td><td>{o["id"]}</td><td>{o["network"]}</td><td>{o["count"]}</td>'
         f'<td class="flex">'
         f'<button class="btn-sm" onclick="copyFeed(\'{o["id"]}\',\'offer\')">JSON</button>'
         f'<button class="btn-sm" style="background:#43a047" onclick="copySuppressionLink(\'{o["id"]}\',\'offer\',\'plain\')">Plain</button>'

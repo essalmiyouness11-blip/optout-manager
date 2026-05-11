@@ -488,3 +488,19 @@ def get_offer_csv_data(fernet: Fernet, offer_id: str, format: str = "plain", sin
         if val:
             lines.append(val)
     return "\n".join(lines) + ("\n" if lines else "")
+
+
+def get_offer_statistics(fernet: Fernet, offer_id: str) -> dict:
+    records = get_offer_unsubscribers_list(fernet, offer_id)
+    total = len(records)
+    tlds: dict[str, int] = {}
+    for r in records:
+        email = r.get("email", "")
+        if "@" in email:
+            domain = email.split("@", 1)[1].lower()
+            tlds[domain] = tlds.get(domain, 0) + 1
+    sorted_tlds = sorted(tlds.items(), key=lambda x: -x[1])
+    return {
+        "total": total,
+        "tlds": [{"domain": d, "count": c} for d, c in sorted_tlds],
+    }
