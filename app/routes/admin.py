@@ -498,14 +498,18 @@ def unsubscribers_page(payload: dict = Depends(require_admin)):
       <select id="filter-off">{off_opts}</select>
     </div>
     <button type="submit" class="btn">Search</button>
-    <button type="button" class="btn" id="export-btn" style="background:#43a047">Export CSV</button>
+    <select id="export-format" style="flex:0.5;min-width:80px;margin-bottom:0">
+      <option value="plain">Full CSV</option>
+      <option value="md5">MD5 Only</option>
+    </select>
+    <button type="button" class="btn" id="export-btn" style="background:#43a047">Export</button>
   </form>
 </div>
 <div class="card">
   <h2>Results <span id="result-count" class="muted"></span></h2>
   <div id="loading" style="text-align:center;padding:2rem;color:#999">Select filters and click Search</div>
   <div id="result-table" style="display:none">
-    <table><thead><tr><th>Email Hash</th><th>Unsubscribed At</th></tr></thead>
+    <table><thead><tr><th>Email</th><th>MD5</th><th>SHA256</th><th>Date</th></tr></thead>
     <tbody id="result-body"></tbody></table>
   </div>
 </div>
@@ -519,7 +523,8 @@ document.getElementById('filter-form').addEventListener('submit',async function(
   e.preventDefault();search();}});
 document.getElementById('export-btn').addEventListener('click',function(){{
   const level=document.getElementById('filter-level').value;
-  const params=new URLSearchParams({{level}});
+  const format=document.getElementById('export-format').value;
+  const params=new URLSearchParams({{level,format}});
   if(level==='network') params.set('network_id',document.getElementById('filter-net').value);
   if(level==='offer') params.set('offer_id',document.getElementById('filter-off').value);
   window.location.href='/admin/unsubscribers/export?'+params.toString();
@@ -544,7 +549,7 @@ async function search(){{
   }}
   document.getElementById('result-count').textContent='('+data.length+' records)';
   document.getElementById('result-body').innerHTML=data.map(r=>
-    '<tr><td style="font-family:monospace;font-size:0.75rem">'+r.email_hash+'</td><td>'+new Date(r.timestamp*1000).toLocaleString()+'</td></tr>'
+    '<tr><td style="font-size:0.8rem">'+(r.email||'')+'</td><td style="font-family:monospace;font-size:0.7rem">'+(r.md5||'')+'</td><td style="font-family:monospace;font-size:0.7rem">'+r.email_hash+'</td><td style="font-size:0.8rem">'+new Date(r.timestamp*1000).toLocaleString()+'</td></tr>'
   ).join('');
   document.getElementById('result-table').style.display='block';
 }}
@@ -569,6 +574,7 @@ def unsubscribers_export(
     level: str = "offer",
     offer_id: str = "",
     network_id: str = "",
+    format_: str = Query("plain", alias="format"),
     _=Depends(require_admin),
 ):
     from fastapi.responses import Response
@@ -576,14 +582,31 @@ def unsubscribers_export(
     if level == "global":
         target = "*"
     results = get_unsubscribers_for_target(fernet, level, target)
-    lines = ["email_hash,timestamp"]
-    for r in results:
-        lines.append(f'{r["email_hash"]},{r["timestamp"]}')
+
+    if format_ == "md5":
+        lines = ["md5_email,timestamp"]
+        for r in results:
+            md5 = r.get("md5") or ""
+            if not md5 and r.get("email"):
+                from ..crypto import md5_email
+                md5 = md5_email(r["email"])
+            lines.append(f'{md5},{r["timestamp"]}')
+    else:
+        lines = ["email,md5,sha256,timestamp"]
+        for r in results:
+            email = r.get("email") or ""
+            md5 = r.get("md5") or ""
+            if not md5 and email:
+                from ..crypto import md5_email
+                md5 = md5_email(email)
+            lines.append(f'{email},{md5},{r["email_hash"]},{r["timestamp"]}')
+
     csv = "\n".join(lines) + "\n"
+    suffix = "md5" if format_ == "md5" else "full"
     return Response(
         content=csv,
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=unsubscribers_{level}_{target}.csv"},
+        headers={"Content-Disposition": f"attachment; filename=unsubscribers_{level}_{target}_{suffix}.csv"},
     )
 
 

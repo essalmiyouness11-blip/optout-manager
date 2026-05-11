@@ -32,6 +32,10 @@ def hash_email(email: str) -> str:
     return hashlib.sha256(email.strip().lower().encode()).hexdigest()
 
 
+def md5_email(email: str) -> str:
+    return hashlib.md5(email.strip().lower().encode()).hexdigest()
+
+
 def sign_unsubscribe_token(
     secret: str,
     level: str,

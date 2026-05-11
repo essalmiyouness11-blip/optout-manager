@@ -65,11 +65,17 @@ def record_unsubscribe(
     level: str,
     target: str,
     target_name: str | None = None,
+    email: str | None = None,
 ) -> dict:
     with _lock:
         store = _load(fernet)
         entry = _ensure_entry(store, email_hash)
         now = int(datetime.now(timezone.utc).timestamp())
+
+        if email:
+            entry.email = email
+            from .crypto import md5_email
+            entry.md5 = md5_email(email)
 
         if level == "global":
             entry.global_ = True
@@ -361,7 +367,12 @@ def get_unsubscribers_for_target(
             elif level == "offer":
                 ts = entry.offers.get(target)
             if ts is not None and ts > since:
-                results.append({"email_hash": email_hash, "timestamp": ts})
+                results.append({
+                    "email_hash": email_hash,
+                    "email": entry.email,
+                    "md5": entry.md5,
+                    "timestamp": ts,
+                })
     results.sort(key=lambda r: r["timestamp"], reverse=True)
     return results
 

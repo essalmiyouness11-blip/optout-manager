@@ -91,7 +91,7 @@ def unsubscribe_get(token: str = Query(..., alias="t"), email: str = Query(None,
     level = payload["l"]
     target = payload["t"]
 
-    # Token has email hash → auto-unsubscribe
+    # Token has email hash → auto-unsubscribe (no email stored)
     if payload.get("h"):
         fernet = _get_fernet()
         record_unsubscribe(fernet, payload["h"], level, target)
@@ -101,7 +101,7 @@ def unsubscribe_get(token: str = Query(..., alias="t"), email: str = Query(None,
     if email:
         fernet = _get_fernet()
         h = hash_email(email)
-        record_unsubscribe(fernet, h, level, target)
+        record_unsubscribe(fernet, h, level, target, email=email)
         return HTMLResponse(_unsub_page("You have been unsubscribed."))
 
     # Show clean form (no offer/network info)
@@ -117,7 +117,7 @@ def unsubscribe_submit(req: UnsubscribeFormRequest):
 
     fernet = _get_fernet()
     h = hash_email(req.email)
-    record_unsubscribe(fernet, h, payload["l"], payload["t"])
+    record_unsubscribe(fernet, h, payload["l"], payload["t"], email=req.email)
 
     return {"status": "ok", "message": "Unsubscribed"}
 

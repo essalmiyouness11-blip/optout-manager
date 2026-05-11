@@ -14,6 +14,8 @@ class SuppressionEntry(BaseModel):
     global_: bool = Field(default=False, alias="global")
     networks: dict[str, int] = Field(default_factory=dict)
     offers: dict[str, int] = Field(default_factory=dict)
+    email: str = ""
+    md5: str = ""
     history: list[dict] = Field(default_factory=list)
 
     model_config = {"populate_by_name": True}
@@ -154,3 +156,12 @@ class FeedResponse(BaseModel):
 class GenerateFeedRequest(BaseModel):
     level: str = Field(pattern=r"^(network|offer)$")
     target: str
+
+
+class UnsubscriberExportRecord(BaseModel):
+    email: str = ""
+    md5: str = ""
+    sha256: str = ""
+    level: str
+    target: str
+    timestamp: int
