@@ -22,9 +22,10 @@ def unsubscribe_via_link(token: str = Query(..., alias="t")):
         return HTMLResponse("<h1>Invalid or expired link</h1>", status_code=400)
 
     fernet = _get_fernet()
-    result = record_unsubscribe(fernet, payload["h"], payload["l"], payload["t"])
+    result = record_unsubscribe(fernet, payload["h"], payload["l"], payload["t"], payload.get("n"))
 
-    level_labels = {"global": "all emails", "network": f"network {payload['t']}", "offer": f"offer {payload['t']}"}
+    name = payload.get("n") or payload["t"]
+    level_labels = {"global": "all emails", "network": f"network &ldquo;{name}&rdquo;", "offer": f"offer &ldquo;{name}&rdquo;"}
     label = level_labels.get(payload["l"], payload["t"])
 
     html = f"""<!DOCTYPE html>

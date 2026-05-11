@@ -64,6 +64,7 @@ def record_unsubscribe(
     email_hash: str,
     level: str,
     target: str,
+    target_name: str | None = None,
 ) -> dict:
     with _lock:
         store = _load(fernet)
@@ -79,11 +80,10 @@ def record_unsubscribe(
         elif level == "offer":
             entry.offers[target] = now
 
-        entry.history.append({
-            "level": level,
-            "target": target,
-            "at": now,
-        })
+        hist_entry = {"level": level, "target": target, "at": now}
+        if target_name:
+            hist_entry["name"] = target_name
+        entry.history.append(hist_entry)
 
         _save(fernet, store)
         return {"status": "ok", "level": level, "target": target}

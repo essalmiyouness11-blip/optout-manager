@@ -77,10 +77,14 @@ def generate_form(payload: dict = Depends(get_current_user)):
     <div id="network-field" class="hidden">
       <label for="network_id">Network ID</label>
       <input type="text" id="network_id" name="network_id" placeholder="e.g. net_42">
+      <label for="network_name">Network Name (optional)</label>
+      <input type="text" id="network_name" name="network_name" placeholder="e.g. ClickBank">
     </div>
     <div id="offer-field" class="hidden">
       <label for="offer_id">Offer ID</label>
       <input type="text" id="offer_id" name="offer_id" placeholder="e.g. off_789">
+      <label for="offer_name">Offer Name (optional)</label>
+      <input type="text" id="offer_name" name="offer_name" placeholder="e.g. Premium Plan">
     </div>
     <button type="submit">Generate Link</button>
   </form>
@@ -100,7 +104,7 @@ def generate_form(payload: dict = Depends(get_current_user)):
   }});
   document.getElementById('form').addEventListener('submit',async function(e){{
     e.preventDefault();
-    const body={{email:this.email.value,level:this.level.value,network_id:document.getElementById('network_id').value||null,offer_id:document.getElementById('offer_id').value||null}};
+    const body={{email:this.email.value,level:this.level.value,network_id:document.getElementById('network_id').value||null,network_name:document.getElementById('network_name').value||null,offer_id:document.getElementById('offer_id').value||null,offer_name:document.getElementById('offer_name').value||null}};
     const res=await fetch('/admin/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
     if(!res.ok){{const d=await res.json();alert('Error: '+(d.detail||'Unknown'));return;}}
     const data=await res.json();
@@ -118,19 +122,22 @@ def generate_form(payload: dict = Depends(get_current_user)):
 def generate_link(req: GenerateLinkRequest, _=Depends(get_current_user)):
     secret = os.environ["SECRET_KEY"]
     h = hash_email(req.email)
+    target_name = None
     if req.level == "global":
         target = "*"
     elif req.level == "network":
         if not req.network_id:
             raise HTTPException(400, "network_id required")
         target = req.network_id
+        target_name = req.network_name
     elif req.level == "offer":
         if not req.offer_id:
             raise HTTPException(400, "offer_id required")
         target = req.offer_id
+        target_name = req.offer_name
     else:
         raise HTTPException(400, "Invalid level")
-    token = sign_unsubscribe_token(secret, h, req.level, target)
+    token = sign_unsubscribe_token(secret, h, req.level, target, target_name)
     url = f"{BASE_URL}/u?t={token}"
     return GenerateLinkResponse(unsubscribe_url=url, token=token)
 

@@ -29,7 +29,9 @@ class GenerateLinkRequest(BaseModel):
     email: str
     level: str = Field(pattern=r"^(global|network|offer)$")
     network_id: Optional[str] = None
+    network_name: Optional[str] = None
     offer_id: Optional[str] = None
+    offer_name: Optional[str] = None
 
 
 class GenerateLinkResponse(BaseModel):
