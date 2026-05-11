@@ -1,7 +1,7 @@
 import os
 
-from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse
 
 from ..crypto import verify_unsubscribe_token, make_fernet, hash_email
 from ..store import record_unsubscribe, check_suppression
@@ -14,28 +14,28 @@ def _get_fernet():
     return make_fernet(os.environ["SECRET_KEY"])
 
 
-def _unsub_page(title: str, message: str) -> str:
+def _unsub_page(message: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unsubscribed</title>
 <style>
   body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f5f5f5}}
-  .card{{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);text-align:center;max-width:420px}}
+  .card{{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,0.1);text-align:center;max-width:400px}}
   h1{{color:#2e7d32;margin:0 0 0.5rem}}
   p{{color:#555;line-height:1.5;margin:0.5rem 0}}
 </style>
 </head>
 <body>
 <div class="card">
-  <h1>{title}</h1>
+  <h1>Unsubscribed</h1>
   <p>{message}</p>
 </div>
 </body>
 </html>"""
 
 
-def _email_form(token: str, level_label: str) -> str:
+def _email_form(token: str) -> str:
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -43,8 +43,8 @@ def _email_form(token: str, level_label: str) -> str:
 <style>
   *{{box-sizing:border-box}}
   body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f5f5f5}}
-  .card{{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);text-align:center;max-width:420px}}
-  h1{{color:#333;margin:0 0 0.25rem;font-size:1.4rem}}
+  .card{{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,0.1);text-align:center;max-width:380px}}
+  h1{{color:#333;margin:0 0 0.25rem;font-size:1.3rem}}
   p{{color:#666;margin:0.5rem 0 1.25rem;font-size:0.9rem}}
   input{{width:100%;padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:1rem;margin-bottom:0.75rem}}
   input:focus{{outline:none;border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,0.2)}}
@@ -56,10 +56,9 @@ def _email_form(token: str, level_label: str) -> str:
 <body>
 <div class="card">
   <h1>Unsubscribe</h1>
-  <p>Enter your email to unsubscribe from <strong>{level_label}</strong>.</p>
+  <p>Enter your email address to unsubscribe.</p>
   <div class="error" id="error"></div>
   <form id="form">
-    <input type="hidden" name="token" value="{token}">
     <input type="email" id="email" name="email" required placeholder="your@email.com">
     <button type="submit">Unsubscribe</button>
   </form>
@@ -91,25 +90,22 @@ def unsubscribe_get(token: str = Query(..., alias="t"), email: str = Query(None,
 
     level = payload["l"]
     target = payload["t"]
-    target_name = payload.get("n") or target
-    level_labels = {"global": "all emails", "network": f"network &ldquo;{target_name}&rdquo;", "offer": f"offer &ldquo;{target_name}&rdquo;"}
-    label = level_labels.get(level, target)
 
-    # If token has email hash, auto-unsubscribe
+    # Token has email hash → auto-unsubscribe
     if payload.get("h"):
         fernet = _get_fernet()
-        record_unsubscribe(fernet, payload["h"], level, target, payload.get("n"))
-        return HTMLResponse(_unsub_page("Unsubscribed", f"You have been unsubscribed from {label}."))
+        record_unsubscribe(fernet, payload["h"], level, target)
+        return HTMLResponse(_unsub_page("You have been unsubscribed."))
 
-    # If email provided in query param, auto-unsubscribe
+    # Email provided in query → auto-unsubscribe
     if email:
         fernet = _get_fernet()
         h = hash_email(email)
-        record_unsubscribe(fernet, h, level, target, payload.get("n"))
-        return HTMLResponse(_unsub_page("Unsubscribed", f"{email} has been unsubscribed from {label}."))
+        record_unsubscribe(fernet, h, level, target)
+        return HTMLResponse(_unsub_page("You have been unsubscribed."))
 
-    # Otherwise show form
-    return HTMLResponse(_email_form(token, label))
+    # Show clean form (no offer/network info)
+    return HTMLResponse(_email_form(token))
 
 
 @router.post("/u")
@@ -121,13 +117,9 @@ def unsubscribe_submit(req: UnsubscribeFormRequest):
 
     fernet = _get_fernet()
     h = hash_email(req.email)
-    record_unsubscribe(fernet, h, payload["l"], payload["t"], payload.get("n"))
+    record_unsubscribe(fernet, h, payload["l"], payload["t"])
 
-    target_name = payload.get("n") or payload["t"]
-    level_labels = {"global": "all emails", "network": f"network &ldquo;{target_name}&rdquo;", "offer": f"offer &ldquo;{target_name}&rdquo;"}
-    label = level_labels.get(payload["l"], payload["t"])
-
-    return {"status": "ok", "message": f"Unsubscribed from {label}"}
+    return {"status": "ok", "message": "Unsubscribed"}
 
 
 @router.post("/check", response_model=CheckResponse)

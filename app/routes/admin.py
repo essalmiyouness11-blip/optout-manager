@@ -1,240 +1,454 @@
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from ..crypto import make_fernet, sign_unsubscribe_token, hash_email
-from ..store import export_suppressions, import_suppressions, list_users, create_user, delete_user, update_user_api_key
-from ..auth import hash_password, get_current_user, require_admin
-from ..models import GenerateLinkRequest, GenerateLinkResponse, CreateUserRequest, UserResponse
+from ..auth import get_current_user, require_admin, hash_password
+from ..crypto import make_fernet, sign_unsubscribe_token
+from ..store import (
+    export_suppressions, import_suppressions,
+    list_users, create_user, delete_user,
+    create_network, get_network, list_networks, update_network, delete_network,
+    create_offer, get_offer, list_offers, update_offer, delete_offer,
+    get_dashboard,
+)
+from ..models import (
+    GenerateLinkRequest, GenerateLinkResponse,
+    CreateUserRequest, UserResponse,
+    CreateNetworkRequest, UpdateNetworkRequest, NetworkResponse,
+    CreateOfferRequest, UpdateOfferRequest, OfferResponse,
+)
 
 router = APIRouter()
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
-
 fernet = make_fernet(os.environ["SECRET_KEY"])
 
 
-def _admin_or_api(request: Request, payload: dict = Depends(get_current_user)):
-    return payload
+# ── Layout ──
 
+_ADMIN_TABS = """
+<div class="tabs">
+  <a href="/admin/generate" class="tab %s">Generate</a>
+  <a href="/admin/networks" class="tab %s">Networks</a>
+  <a href="/admin/offers" class="tab %s">Offers</a>
+  <a href="/admin/dashboard" class="tab %s">Dashboard</a>
+  <a href="/admin/users" class="tab %s">Users</a>
+</div>
+"""
 
-@router.get("/admin", response_class=RedirectResponse)
-def admin_root():
-    return RedirectResponse(url="/admin/generate")
-
-
-@router.get("/admin/generate", response_class=HTMLResponse)
-def generate_form(payload: dict = Depends(get_current_user)):
-    return HTMLResponse(f"""<!DOCTYPE html>
+_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Generate Unsubscribe Link</title>
+<title>%s</title>
 <style>
-  *{{box-sizing:border-box}}
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;margin:0;padding:0}}
-  .nav{{background:#1a1a2e;color:white;padding:0.75rem 2rem;display:flex;justify-content:space-between;align-items:center}}
-  .nav a{{color:#ccc;text-decoration:none;margin-left:1.5rem;font-size:0.875rem}}
-  .nav a:hover{{color:white}}
-  .nav .user{{font-size:0.8rem;color:#999}}
-  .container{{max-width:600px;margin:2rem auto;padding:0 1rem}}
-  .card{{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1)}}
-  h1{{margin:0 0 1.5rem;font-size:1.5rem;color:#333}}
-  label{{display:block;margin-bottom:0.25rem;font-weight:600;color:#444;font-size:0.875rem}}
-  input,select{{width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:6px;font-size:1rem;margin-bottom:1rem}}
-  input:focus,select:focus{{outline:none;border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,0.2)}}
-  button{{width:100%;padding:0.75rem;background:#1976d2;color:white;border:none;border-radius:6px;font-size:1rem;cursor:pointer;font-weight:600}}
-  button:hover{{background:#1565c0}}
-  .hidden{{display:none}}
-  #result{{margin-top:1rem;padding:1rem;background:#e8f5e9;border-radius:6px;word-break:break-all;display:none}}
-  #result a{{color:#1976d2}}
-  .copy-btn{{margin-top:0.5rem;padding:0.4rem 0.75rem;background:#43a047;color:white;border:none;border-radius:4px;cursor:pointer;font-size:0.8rem}}
-  .copy-btn:hover{{background:#388e3c}}
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;margin:0;padding:0}
+.nav{background:#1a1a2e;color:white;padding:0.75rem 2rem;display:flex;justify-content:space-between;align-items:center}
+.nav .user{font-size:0.8rem;color:#999}
+.nav a{color:#ccc;text-decoration:none;margin-left:1rem;font-size:0.85rem}
+.nav a:hover{color:white}
+.tabs{display:flex;background:#fff;border-bottom:1px solid #ddd;padding:0 1rem}
+.tab{padding:0.7rem 1.25rem;text-decoration:none;color:#666;font-size:0.85rem;border-bottom:2px solid transparent}
+.tab.active{color:#1976d2;border-bottom-color:#1976d2;font-weight:600}
+.tab:hover{color:#333}
+.container{max-width:900px;margin:1.5rem auto;padding:0 1rem}
+.card{background:white;padding:1.5rem 2rem;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:1rem}
+.card h2{margin:0 0 1rem;font-size:1.2rem;color:#333}
+.btn{padding:0.5rem 1rem;background:#1976d2;color:white;border:none;border-radius:5px;cursor:pointer;font-size:0.85rem}
+.btn:hover{background:#1565c0}
+.btn-sm{padding:0.3rem 0.6rem;font-size:0.75rem;background:#1976d2;color:white;border:none;border-radius:4px;cursor:pointer}
+.btn-sm:hover{background:#1565c0}
+.btn-del{padding:0.3rem 0.6rem;font-size:0.75rem;background:#d32f2f;color:white;border:none;border-radius:4px;cursor:pointer}
+.btn-del:hover{background:#b71c1c}
+input,select{width:100%%;padding:0.5rem;border:1px solid #ccc;border-radius:5px;font-size:0.9rem;margin-bottom:0.75rem}
+input:focus,select:focus{outline:none;border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,0.15)}
+table{width:100%%;border-collapse:collapse}
+th,td{text-align:left;padding:0.5rem 0.5rem;border-bottom:1px solid #eee;font-size:0.85rem}
+th{font-weight:600;color:#555;font-size:0.8rem;text-transform:uppercase}
+.flex{display:flex;gap:0.5rem;align-items:center}
+.msg{padding:0.6rem;border-radius:5px;margin-bottom:0.75rem;display:none;font-size:0.85rem}
+.msg.ok{background:#e8f5e9;color:#2e7d32;display:block}
+.msg.err{background:#ffebee;color:#d32f2f;display:block}
+.muted{color:#999;font-size:0.8rem}
+.hidden{display:none}
 </style>
 </head>
 <body>
 <div class="nav">
   <strong>Suppression Manager</strong>
   <div>
-    <a href="/admin/generate">Generate</a>
-    <a href="/admin/users">Users</a>
-    <span class="user">{payload['sub']} ({payload['role']})</span>
-    <a href="/auth/logout" onclick="fetch('/auth/logout',{{method:'POST'}}).then(()=>location.href='/auth/login');return false">Logout</a>
+    <span class="user">%s (%s)</span>
+    <a href="/auth/logout" onclick="fetch('/auth/logout',{method:'POST'}).then(()=>location.href='/auth/login');return false">Logout</a>
   </div>
 </div>
+%s
 <div class="container">
+%s
+</div>
+</body>
+</html>"""
+
+
+def _page(title, user_email, user_role, active_tab, content):
+    tabs = _ADMIN_TABS % tuple(active_tab if i == ["generate","networks","offers","dashboard","users"].index(active_tab) else "" for i in range(5))
+    return _PAGE % (title, user_email, user_role, tabs, content)
+
+
+# ── Helpers ──
+
+def _json_ok(data):
+    return JSONResponse(content=data)
+
+
+# ── Root ──
+
+@router.get("/admin", response_class=HTMLResponse)
+def admin_root():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/admin/generate")
+
+
+# ── Generate ──
+
+@router.get("/admin/generate", response_class=HTMLResponse)
+def generate_page(payload: dict = Depends(get_current_user)):
+    nets = list_networks(fernet)
+    net_opts = "".join(f'<option value="{n.id}">{n.name} ({n.id})</option>' for n in nets)
+    offers_json = {}
+    for n in nets:
+        offs = list_offers(fernet, n.id)
+        offers_json[n.id] = [{"id": o.id, "name": o.name} for o in offs]
+    import json
+    offers_data = json.dumps(offers_json)
+
+    content = f"""
 <div class="card">
-  <h1>Generate Unsubscribe Link</h1>
+  <h2>Generate Unsubscribe Link</h2>
+  <div id="msg" class="msg"></div>
   <form id="form">
-    <div style="background:#fff3e0;padding:0.75rem;border-radius:6px;margin-bottom:1rem;font-size:0.8rem;color:#e65100;text-align:left">
-      <strong>Campaign link</strong> — leave email blank, user enters it on the page.<br>
-      <strong>Personalized link</strong> — enter email for auto-unsubscribe (no form).
-    </div>
-    <label for="email">Email (optional — leave blank for campaign link)</label>
-    <input type="email" id="email" name="email" placeholder="user@example.com">
-    <label for="level">Level</label>
-    <select id="level" name="level">
-      <option value="global">Global (all communications)</option>
-      <option value="network">Network</option>
-      <option value="offer">Offer</option>
+    <label>Network</label>
+    <select id="network" name="network_id">
+      <option value="">-- Select Network --</option>
+      {net_opts}
     </select>
-    <div id="network-field" class="hidden">
-      <label for="network_id">Network ID</label>
-      <input type="text" id="network_id" name="network_id" placeholder="e.g. net_42">
-      <label for="network_name">Network Name (optional)</label>
-      <input type="text" id="network_name" name="network_name" placeholder="e.g. ClickBank">
-    </div>
     <div id="offer-field" class="hidden">
-      <label for="offer_id">Offer ID</label>
-      <input type="text" id="offer_id" name="offer_id" placeholder="e.g. off_789">
-      <label for="offer_name">Offer Name (optional)</label>
-      <input type="text" id="offer_name" name="offer_name" placeholder="e.g. Premium Plan">
+      <label>Offer</label>
+      <select id="offer" name="offer_id">
+        <option value="">-- Select Offer --</option>
+      </select>
     </div>
-    <button type="submit">Generate Link</button>
+    <button type="submit" class="btn" style="margin-top:0.5rem">Generate Link</button>
   </form>
-  <div id="result">
+  <div id="result" style="display:none;margin-top:1rem;padding:1rem;background:#e8f5e9;border-radius:6px;word-break:break-all">
     <strong>Unsubscribe URL:</strong><br>
     <a id="result-url" href="#" target="_blank"></a><br><br>
     <strong>Token:</strong><br>
-    <code id="result-token" style="font-size:0.8rem;word-break:break-all;"></code><br><br>
-    <button class="copy-btn" onclick="navigator.clipboard.writeText(document.getElementById('result-url').href).then(()=>alert('Copied!'))">Copy URL</button>
+    <code id="result-token" style="font-size:0.75rem;word-break:break-all"></code><br><br>
+    <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('result-url').href).then(()=>alert('Copied!'))">Copy URL</button>
   </div>
 </div>
-</div>
 <script>
-  document.getElementById('level').addEventListener('change',function(){{
-    document.getElementById('network-field').classList.toggle('hidden',this.value!=='network');
-    document.getElementById('offer-field').classList.toggle('hidden',this.value!=='offer');
-  }});
-  document.getElementById('form').addEventListener('submit',async function(e){{
-    e.preventDefault();
-    const emailVal=this.email.value.trim()||null;
-    const body={{email:emailVal,level:this.level.value,network_id:document.getElementById('network_id').value||null,network_name:document.getElementById('network_name').value||null,offer_id:document.getElementById('offer_id').value||null,offer_name:document.getElementById('offer_name').value||null}};
-    const res=await fetch('/admin/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
-    if(!res.ok){{const d=await res.json();alert('Error: '+(d.detail||'Unknown'));return;}}
-    const data=await res.json();
-    document.getElementById('result-url').href=data.unsubscribe_url;
-    document.getElementById('result-url').textContent=data.unsubscribe_url;
-    document.getElementById('result-token').textContent=data.token;
-    document.getElementById('result').style.display='block';
-  }});
-</script>
-</body>
-</html>""")
+const offers = {offers_data};
+document.getElementById('network').addEventListener('change',function(){{
+  const sel = document.getElementById('offer');
+  sel.innerHTML = '<option value="">-- Select Offer --</option>';
+  const list = offers[this.value]||[];
+  for(const o of list) sel.innerHTML += '<option value="'+o.id+'">'+o.name+' ('+o.id+')</option>';
+  document.getElementById('offer-field').classList.toggle('hidden',!this.value);
+}});
+document.getElementById('form').addEventListener('submit',async function(e){{
+  e.preventDefault();
+  const nid = document.getElementById('network').value;
+  const oid = document.getElementById('offer').value;
+  if(!nid){{msg('Select a network','err');return;}}
+  const body = oid ? {{level:'offer',network_id:nid,offer_id:oid}} : {{level:'network',network_id:nid}};
+  const res=await fetch('/admin/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  const data=await res.json();
+  document.getElementById('result-url').href=data.unsubscribe_url;
+  document.getElementById('result-url').textContent=data.unsubscribe_url;
+  document.getElementById('result-token').textContent=data.token;
+  document.getElementById('result').style.display='block';
+  document.getElementById('msg').style.display='none';
+}});
+function msg(t,c){{const el=document.getElementById('msg');el.textContent=t;el.className='msg '+c;el.style.display='block'}}
+</script>"""
+    return _page("Generate Link", payload["sub"], payload["role"], "generate", content)
 
 
 @router.post("/admin/generate", response_model=GenerateLinkResponse)
 def generate_link(req: GenerateLinkRequest, _=Depends(get_current_user)):
     secret = os.environ["SECRET_KEY"]
-    h = hash_email(req.email) if req.email else None
-    target_name = None
-    if req.level == "global":
-        target = "*"
-    elif req.level == "network":
-        if not req.network_id:
-            raise HTTPException(400, "network_id required")
-        target = req.network_id
-        target_name = req.network_name
+    if req.level == "network":
+        net = get_network(fernet, req.network_id)
+        if not net:
+            raise HTTPException(400, "Network not found")
+        target = net.id
+        token = sign_unsubscribe_token(secret, req.level, target)
     elif req.level == "offer":
-        if not req.offer_id:
-            raise HTTPException(400, "offer_id required")
-        target = req.offer_id
-        target_name = req.offer_name
+        off = get_offer(fernet, req.offer_id)
+        if not off:
+            raise HTTPException(400, "Offer not found")
+        target = off.id
+        token = sign_unsubscribe_token(secret, req.level, target)
     else:
         raise HTTPException(400, "Invalid level")
-    token = sign_unsubscribe_token(secret, req.level, target, target_name, h)
     url = f"{BASE_URL}/u?t={token}"
-    if req.email:
-        url += f"&e={req.email}"
     return GenerateLinkResponse(unsubscribe_url=url, token=token)
 
+
+# ── Networks ──
+
+@router.get("/admin/networks", response_class=HTMLResponse)
+def networks_page(payload: dict = Depends(require_admin)):
+    nets = list_networks(fernet)
+    rows = "".join(
+        f'<tr><td>{n.id}</td><td>{n.name}</td><td>{n.created_at}</td>'
+        f'<td class="flex">'
+        f'<button class="btn-sm" onclick="editNet(\'{n.id}\',\'{n.name}\')">Edit</button>'
+        f'<button class="btn-del" onclick="delNet(\'{n.id}\')">Delete</button></td></tr>'
+        for n in nets
+    )
+    content = f"""
+<div class="card">
+  <h2>Add Network</h2>
+  <div id="msg" class="msg"></div>
+  <form id="form">
+    <label>Network ID</label>
+    <input type="text" id="net-id" placeholder="e.g. clickbank" required>
+    <label>Network Name</label>
+    <input type="text" id="net-name" placeholder="e.g. ClickBank" required>
+    <button type="submit" class="btn">Add Network</button>
+  </form>
+</div>
+<div class="card">
+  <h2>All Networks</h2>
+  <table><thead><tr><th>ID</th><th>Name</th><th>Created</th><th></th></tr></thead>
+  <tbody>{rows or '<tr><td colspan="4" class="muted">No networks yet</td></tr>'}</tbody></table>
+</div>
+<script>
+document.getElementById('form').addEventListener('submit',async function(e){{
+  e.preventDefault();
+  const id=document.getElementById('net-id').value.trim();
+  const name=document.getElementById('net-name').value.trim();
+  const res=await fetch('/admin/networks',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{id,name}})}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  location.reload();
+}});
+async function delNet(id){{
+  if(!confirm('Delete network '+id+'? All its offers will also be deleted.'))return;
+  const res=await fetch('/admin/networks/'+encodeURIComponent(id),{{method:'DELETE'}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  location.reload();
+}}
+async function editNet(id,name){{
+  const newName=prompt('New name for '+id+':',name);
+  if(!newName||newName===name)return;
+  const res=await fetch('/admin/networks/'+encodeURIComponent(id),{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{name:newName}})}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  location.reload();
+}}
+function msg(t,c){{const el=document.getElementById('msg');el.textContent=t;el.className='msg '+c;el.style.display='block'}}
+</script>"""
+    return _page("Networks", payload["sub"], payload["role"], "networks", content)
+
+
+@router.post("/admin/networks")
+def create_network_endpoint(req: CreateNetworkRequest, _=Depends(require_admin)):
+    try:
+        net = create_network(fernet, req.id, req.name)
+        return NetworkResponse(id=net.id, name=net.name, created_at=net.created_at)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.put("/admin/networks/{net_id}")
+def update_network_endpoint(net_id: str, req: UpdateNetworkRequest, _=Depends(require_admin)):
+    net = update_network(fernet, net_id, req.name)
+    if not net:
+        raise HTTPException(404, "Network not found")
+    return NetworkResponse(id=net.id, name=net.name, created_at=net.created_at)
+
+
+@router.delete("/admin/networks/{net_id}")
+def delete_network_endpoint(net_id: str, _=Depends(require_admin)):
+    if not delete_network(fernet, net_id):
+        raise HTTPException(404, "Network not found")
+    return {"status": "deleted"}
+
+
+@router.get("/admin/networks/{net_id}/offers")
+def get_network_offers(net_id: str, _=Depends(require_admin)):
+    offs = list_offers(fernet, net_id)
+    return [{"id": o.id, "name": o.name} for o in offs]
+
+
+# ── Offers ──
+
+@router.get("/admin/offers", response_class=HTMLResponse)
+def offers_page(payload: dict = Depends(require_admin)):
+    nets = list_networks(fernet)
+    net_opts = "".join(f'<option value="{n.id}">{n.name}</option>' for n in nets)
+    offs = list_offers(fernet)
+    rows = "".join(
+        f'<tr><td>{o.id}</td><td>{o.name}</td><td>{o.network_id}</td><td>{o.created_at}</td>'
+        f'<td class="flex">'
+        f'<button class="btn-sm" onclick="editOff(\'{o.id}\',\'{o.name}\')">Edit</button>'
+        f'<button class="btn-del" onclick="delOff(\'{o.id}\')">Delete</button></td></tr>'
+        for o in offs
+    )
+    content = f"""
+<div class="card">
+  <h2>Add Offer</h2>
+  <div id="msg" class="msg"></div>
+  <form id="form">
+    <label>Offer ID</label>
+    <input type="text" id="off-id" placeholder="e.g. premium-plan" required>
+    <label>Offer Name</label>
+    <input type="text" id="off-name" placeholder="e.g. Premium Plan" required>
+    <label>Network</label>
+    <select id="off-net">{net_opts}</select>
+    <button type="submit" class="btn">Add Offer</button>
+  </form>
+</div>
+<div class="card">
+  <h2>All Offers</h2>
+  <table><thead><tr><th>ID</th><th>Name</th><th>Network</th><th>Created</th><th></th></tr></thead>
+  <tbody>{rows or '<tr><td colspan="5" class="muted">No offers yet</td></tr>'}</tbody></table>
+</div>
+<script>
+document.getElementById('form').addEventListener('submit',async function(e){{
+  e.preventDefault();
+  const id=document.getElementById('off-id').value.trim();
+  const name=document.getElementById('off-name').value.trim();
+  const net=document.getElementById('off-net').value;
+  const res=await fetch('/admin/offers',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{id,name,network_id:net}})}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  location.reload();
+}});
+async function delOff(id){{
+  if(!confirm('Delete offer '+id+'?'))return;
+  const res=await fetch('/admin/offers/'+encodeURIComponent(id),{{method:'DELETE'}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  location.reload();
+}}
+async function editOff(id,name){{
+  const newName=prompt('New name for '+id+':',name);
+  if(!newName||newName===name)return;
+  const res=await fetch('/admin/offers/'+encodeURIComponent(id),{{method:'PUT',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{name:newName}})}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  location.reload();
+}}
+function msg(t,c){{const el=document.getElementById('msg');el.textContent=t;el.className='msg '+c;el.style.display='block'}}
+</script>"""
+    return _page("Offers", payload["sub"], payload["role"], "offers", content)
+
+
+@router.post("/admin/offers")
+def create_offer_endpoint(req: CreateOfferRequest, _=Depends(require_admin)):
+    try:
+        off = create_offer(fernet, req.id, req.name, req.network_id)
+        return OfferResponse(id=off.id, name=off.name, network_id=off.network_id, created_at=off.created_at)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.put("/admin/offers/{offer_id}")
+def update_offer_endpoint(offer_id: str, req: UpdateOfferRequest, _=Depends(require_admin)):
+    off = update_offer(fernet, offer_id, req.name)
+    if not off:
+        raise HTTPException(404, "Offer not found")
+    return OfferResponse(id=off.id, name=off.name, network_id=off.network_id, created_at=off.created_at)
+
+
+@router.delete("/admin/offers/{offer_id}")
+def delete_offer_endpoint(offer_id: str, _=Depends(require_admin)):
+    if not delete_offer(fernet, offer_id):
+        raise HTTPException(404, "Offer not found")
+    return {"status": "deleted"}
+
+
+# ── Dashboard ──
+
+@router.get("/admin/dashboard", response_class=HTMLResponse)
+def dashboard_page(payload: dict = Depends(require_admin)):
+    data = get_dashboard(fernet)
+    net_rows = "".join(
+        f'<tr><td>{n["name"]}</td><td>{n["id"]}</td><td>{n["unsubscribers"]}</td></tr>'
+        for n in data["networks"]
+    )
+    off_rows = "".join(
+        f'<tr><td>{o["name"]}</td><td>{o["id"]}</td><td>{o["unsubscribers"]}</td></tr>'
+        for o in data["offers"]
+    )
+    content = f"""
+<div class="card">
+  <h2>Global Opt-Outs</h2>
+  <p style="font-size:1.5rem;font-weight:700;color:#d32f2f">{data["global_count"]}</p>
+</div>
+<div class="card">
+  <h2>Unsubscribers per Network</h2>
+  <table><thead><tr><th>Network</th><th>ID</th><th>Unsubscribers</th></tr></thead>
+  <tbody>{net_rows or '<tr><td colspan="3" class="muted">No network unsubscribers yet</td></tr>'}</tbody></table>
+</div>
+<div class="card">
+  <h2>Unsubscribers per Offer</h2>
+  <table><thead><tr><th>Offer</th><th>ID</th><th>Unsubscribers</th></tr></thead>
+  <tbody>{off_rows or '<tr><td colspan="3" class="muted">No offer unsubscribers yet</td></tr>'}</tbody></table>
+</div>"""
+    return _page("Dashboard", payload["sub"], payload["role"], "dashboard", content)
+
+
+# ── Users ──
 
 @router.get("/admin/users", response_class=HTMLResponse)
 def users_page(payload: dict = Depends(require_admin)):
     users = list_users(fernet)
     rows = "".join(
-        f"<tr><td>{u.email}</td><td>{u.role}</td><td><code style='font-size:0.75rem'>{u.api_key[:16]}...</code></td>"
-        f"<td>{u.created_at}</td>"
-        f"<td><button class='del' data-email='{u.email}'>Delete</button></td></tr>"
+        f'<tr><td>{u.email}</td><td>{u.role}</td><td><code style="font-size:0.75rem">{u.api_key[:16]}...</code></td>'
+        f'<td>{u.created_at}</td>'
+        f'<td><button class="btn-del" onclick="delUser(\'{u.email}\')">Delete</button></td></tr>'
         for u in users
     )
-    return HTMLResponse(f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Manage Users</title>
-<style>
-  *{{box-sizing:border-box}}
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;margin:0;padding:0}}
-  .nav{{background:#1a1a2e;color:white;padding:0.75rem 2rem;display:flex;justify-content:space-between;align-items:center}}
-  .nav a{{color:#ccc;text-decoration:none;margin-left:1.5rem;font-size:0.875rem}}
-  .nav a:hover{{color:white}}
-  .container{{max-width:800px;margin:2rem auto;padding:0 1rem}}
-  .card{{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);margin-bottom:1rem}}
-  h1{{margin:0 0 1.5rem;font-size:1.5rem;color:#333}}
-  table{{width:100%;border-collapse:collapse}}
-  th,td{{text-align:left;padding:0.5rem;border-bottom:1px solid #eee;font-size:0.875rem}}
-  th{{font-weight:600;color:#444}}
-  input{{padding:0.5rem;border:1px solid #ccc;border-radius:6px;font-size:0.875rem;margin-right:0.5rem}}
-  select{{padding:0.5rem;border:1px solid #ccc;border-radius:6px;font-size:0.875rem;margin-right:0.5rem}}
-  .btn{{padding:0.5rem 1rem;background:#1976d2;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.875rem}}
-  .btn:hover{{background:#1565c0}}
-  .del{{padding:0.5rem 1rem;background:#d32f2f;color:white;border:none;border-radius:6px;cursor:pointer;font-size:0.875rem}}
-  .del:hover{{background:#b71c1c}}
-  #msg{{margin-top:1rem;padding:0.75rem;border-radius:6px;display:none}}
-  .success{{background:#e8f5e9;color:#2e7d32}}
-  .error{{background:#ffebee;color:#d32f2f}}
-</style>
-</head>
-<body>
-<div class="nav">
-  <strong>Suppression Manager</strong>
-  <div>
-    <a href="/admin/generate">Generate</a>
-    <a href="/admin/users">Users</a>
-    <a href="/auth/logout" onclick="fetch('/auth/logout',{{method:'POST'}}).then(()=>location.href='/auth/login');return false">Logout</a>
-  </div>
-</div>
-<div class="container">
-<div class="card">
-  <h1>Users</h1>
-  <table>
-    <thead><tr><th>Email</th><th>Role</th><th>API Key</th><th>Created</th><th></th></tr></thead>
-    <tbody>{rows}</tbody>
-  </table>
-</div>
+    content = f"""
 <div class="card">
   <h2>Add User</h2>
-  <input type="email" id="new-email" placeholder="Email">
-  <input type="password" id="new-pw" placeholder="Password (min 8 chars)">
-  <select id="new-role">
-    <option value="user">User</option>
-    <option value="admin">Admin</option>
-  </select>
-  <button class="btn" onclick="addUser()">Add</button>
-  <div id="msg"></div>
+  <div id="msg" class="msg"></div>
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+    <input type="email" id="new-email" placeholder="Email" style="flex:2;min-width:150px">
+    <input type="password" id="new-pw" placeholder="Password" style="flex:1;min-width:100px">
+    <select id="new-role" style="flex:0.5;min-width:80px">
+      <option value="user">User</option>
+      <option value="admin">Admin</option>
+    </select>
+    <button class="btn" onclick="addUser()">Add</button>
+  </div>
 </div>
+<div class="card">
+  <h2>All Users</h2>
+  <table><thead><tr><th>Email</th><th>Role</th><th>API Key</th><th>Created</th><th></th></tr></thead>
+  <tbody>{rows}</tbody></table>
 </div>
 <script>
-  function msg(text,type){{const el=document.getElementById('msg');el.textContent=text;el.className=type;el.style.display='block';setTimeout(()=>el.style.display='none',3000)}}
-  async function addUser(){{
-    const email=document.getElementById('new-email').value;
-    const pw=document.getElementById('new-pw').value;
-    const role=document.getElementById('new-role').value;
-    if(!email||!pw)return;
-    const res=await fetch('/admin/users',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email,password:pw,role}})}});
-    if(!res.ok){{const d=await res.json();msg(d.detail||'Error','error');return;}}
-    msg('User created','success');location.reload();
-  }}
-  document.querySelectorAll('.del').forEach(b=>b.addEventListener('click',async function(){{
-    if(!confirm('Delete '+this.dataset.email+'?'))return;
-    const res=await fetch('/admin/users/'+encodeURIComponent(this.dataset.email),{{method:'DELETE'}});
-    if(!res.ok){{const d=await res.json();msg(d.detail||'Error','error');return;}}
-    msg('User deleted','success');location.reload();
-  }}));
-</script>
-</body>
-</html>""")
+async function addUser(){{
+  const email=document.getElementById('new-email').value;
+  const pw=document.getElementById('new-pw').value;
+  const role=document.getElementById('new-role').value;
+  if(!email||!pw)return;
+  const res=await fetch('/admin/users',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email,password:pw,role}})}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  location.reload();
+}}
+async function delUser(email){{
+  if(!confirm('Delete '+email+'?'))return;
+  const res=await fetch('/admin/users/'+encodeURIComponent(email),{{method:'DELETE'}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  location.reload();
+}}
+function msg(t,c){{const el=document.getElementById('msg');el.textContent=t;el.className='msg '+c;el.style.display='block'}}
+</script>"""
+    return _page("Users", payload["sub"], payload["role"], "users", content)
 
 
 @router.post("/admin/users")
@@ -250,6 +464,8 @@ def delete_user_endpoint(email: str, _=Depends(require_admin)):
         raise HTTPException(404, "User not found")
     return {"status": "deleted"}
 
+
+# ── Export/Import ──
 
 @router.get("/admin/export")
 def admin_export(_=Depends(require_admin)):

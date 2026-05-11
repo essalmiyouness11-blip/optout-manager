@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from cryptography.fernet import Fernet
 
-from .models import SuppressionStore, SuppressionEntry, UserEntry
+from .models import SuppressionStore, SuppressionEntry, UserEntry, AffiliateNetworkEntry, OfferEntry
 
 _lock = threading.Lock()
 _cache: SuppressionStore | None = None
@@ -146,11 +146,6 @@ def import_suppressions(fernet: Fernet, data: dict) -> int:
 
 # ── User functions ──
 
-def _ensure_users(store: SuppressionStore):
-    if store.users is None:
-        store.users = {}
-
-
 def user_count(fernet: Fernet) -> int:
     with _lock:
         store = _load(fernet)
@@ -208,3 +203,139 @@ def update_user_api_key(fernet: Fernet, email: str) -> str:
         user.api_key = generate_api_key()
         _save(fernet, store)
         return user.api_key
+
+
+# ── Affiliate Network CRUD ──
+
+def create_network(fernet: Fernet, net_id: str, name: str) -> AffiliateNetworkEntry:
+    with _lock:
+        store = _load(fernet)
+        if net_id in (store.networks or {}):
+            raise ValueError("Network already exists")
+        now = int(datetime.now(timezone.utc).timestamp())
+        net = AffiliateNetworkEntry(id=net_id, name=name, created_at=now)
+        store.networks[net_id] = net
+        _save(fernet, store)
+        return net
+
+
+def get_network(fernet: Fernet, net_id: str) -> AffiliateNetworkEntry | None:
+    with _lock:
+        store = _load(fernet)
+        return (store.networks or {}).get(net_id)
+
+
+def list_networks(fernet: Fernet) -> list[AffiliateNetworkEntry]:
+    with _lock:
+        store = _load(fernet)
+        return list((store.networks or {}).values())
+
+
+def update_network(fernet: Fernet, net_id: str, name: str) -> AffiliateNetworkEntry | None:
+    with _lock:
+        store = _load(fernet)
+        net = (store.networks or {}).get(net_id)
+        if not net:
+            return None
+        net.name = name
+        _save(fernet, store)
+        return net
+
+
+def delete_network(fernet: Fernet, net_id: str) -> bool:
+    with _lock:
+        store = _load(fernet)
+        if net_id not in (store.networks or {}):
+            return False
+        del store.networks[net_id]
+        # also remove all offers belonging to this network
+        to_remove = [oid for oid, o in (store.offers or {}).items() if o.network_id == net_id]
+        for oid in to_remove:
+            del store.offers[oid]
+        _save(fernet, store)
+        return True
+
+
+# ── Offer CRUD ──
+
+def create_offer(fernet: Fernet, offer_id: str, name: str, network_id: str) -> OfferEntry:
+    with _lock:
+        store = _load(fernet)
+        if offer_id in (store.offers or {}):
+            raise ValueError("Offer already exists")
+        if network_id not in (store.networks or {}):
+            raise ValueError("Network not found")
+        now = int(datetime.now(timezone.utc).timestamp())
+        offer = OfferEntry(id=offer_id, name=name, network_id=network_id, created_at=now)
+        store.offers[offer_id] = offer
+        _save(fernet, store)
+        return offer
+
+
+def get_offer(fernet: Fernet, offer_id: str) -> OfferEntry | None:
+    with _lock:
+        store = _load(fernet)
+        return (store.offers or {}).get(offer_id)
+
+
+def list_offers(fernet: Fernet, network_id: str | None = None) -> list[OfferEntry]:
+    with _lock:
+        store = _load(fernet)
+        all_offers = list((store.offers or {}).values())
+    if network_id:
+        return [o for o in all_offers if o.network_id == network_id]
+    return all_offers
+
+
+def update_offer(fernet: Fernet, offer_id: str, name: str) -> OfferEntry | None:
+    with _lock:
+        store = _load(fernet)
+        offer = (store.offers or {}).get(offer_id)
+        if not offer:
+            return None
+        offer.name = name
+        _save(fernet, store)
+        return offer
+
+
+def delete_offer(fernet: Fernet, offer_id: str) -> bool:
+    with _lock:
+        store = _load(fernet)
+        if offer_id not in (store.offers or {}):
+            return False
+        del store.offers[offer_id]
+        _save(fernet, store)
+        return True
+
+
+# ── Dashboard ──
+
+def get_dashboard(fernet: Fernet) -> dict:
+    with _lock:
+        store = _load(fernet)
+
+    networks_count: dict[str, int] = {}
+    offers_count: dict[str, int] = {}
+    global_count = 0
+
+    for entry in store.suppressions.values():
+        if entry.global_:
+            global_count += 1
+        for nid in entry.networks:
+            networks_count[nid] = networks_count.get(nid, 0) + 1
+        for oid in entry.offers:
+            offers_count[oid] = offers_count.get(oid, 0) + 1
+
+    nets = []
+    for n in (store.networks or {}).values():
+        count = networks_count.get(n.id, 0)
+        if count > 0:
+            nets.append({"id": n.id, "name": n.name, "unsubscribers": count})
+
+    offs = []
+    for o in (store.offers or {}).values():
+        count = offers_count.get(o.id, 0)
+        if count > 0:
+            offs.append({"id": o.id, "name": o.name, "unsubscribers": count})
+
+    return {"networks": nets, "offers": offs, "global_count": global_count}
