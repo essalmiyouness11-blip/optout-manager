@@ -34,18 +34,19 @@ def hash_email(email: str) -> str:
 
 def sign_unsubscribe_token(
     secret: str,
-    email_hash: str,
     level: str,
     target: str,
     target_name: str | None = None,
+    email_hash: str | None = None,
 ) -> str:
     payload = {
-        "h": email_hash,
         "l": level,
         "t": target,
         "j": os.urandom(8).hex(),
         "i": int(datetime.now(timezone.utc).timestamp()),
     }
+    if email_hash:
+        payload["h"] = email_hash
     if target_name:
         payload["n"] = target_name
     return jwt.encode(payload, secret, algorithm=ALGORITHM)

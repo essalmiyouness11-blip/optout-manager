@@ -66,8 +66,12 @@ def generate_form(payload: dict = Depends(get_current_user)):
 <div class="card">
   <h1>Generate Unsubscribe Link</h1>
   <form id="form">
-    <label for="email">Email</label>
-    <input type="email" id="email" name="email" required placeholder="user@example.com">
+    <div style="background:#fff3e0;padding:0.75rem;border-radius:6px;margin-bottom:1rem;font-size:0.8rem;color:#e65100;text-align:left">
+      <strong>Campaign link</strong> — leave email blank, user enters it on the page.<br>
+      <strong>Personalized link</strong> — enter email for auto-unsubscribe (no form).
+    </div>
+    <label for="email">Email (optional — leave blank for campaign link)</label>
+    <input type="email" id="email" name="email" placeholder="user@example.com">
     <label for="level">Level</label>
     <select id="level" name="level">
       <option value="global">Global (all communications)</option>
@@ -104,7 +108,8 @@ def generate_form(payload: dict = Depends(get_current_user)):
   }});
   document.getElementById('form').addEventListener('submit',async function(e){{
     e.preventDefault();
-    const body={{email:this.email.value,level:this.level.value,network_id:document.getElementById('network_id').value||null,network_name:document.getElementById('network_name').value||null,offer_id:document.getElementById('offer_id').value||null,offer_name:document.getElementById('offer_name').value||null}};
+    const emailVal=this.email.value.trim()||null;
+    const body={{email:emailVal,level:this.level.value,network_id:document.getElementById('network_id').value||null,network_name:document.getElementById('network_name').value||null,offer_id:document.getElementById('offer_id').value||null,offer_name:document.getElementById('offer_name').value||null}};
     const res=await fetch('/admin/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
     if(!res.ok){{const d=await res.json();alert('Error: '+(d.detail||'Unknown'));return;}}
     const data=await res.json();
@@ -121,7 +126,7 @@ def generate_form(payload: dict = Depends(get_current_user)):
 @router.post("/admin/generate", response_model=GenerateLinkResponse)
 def generate_link(req: GenerateLinkRequest, _=Depends(get_current_user)):
     secret = os.environ["SECRET_KEY"]
-    h = hash_email(req.email)
+    h = hash_email(req.email) if req.email else None
     target_name = None
     if req.level == "global":
         target = "*"
@@ -137,8 +142,10 @@ def generate_link(req: GenerateLinkRequest, _=Depends(get_current_user)):
         target_name = req.offer_name
     else:
         raise HTTPException(400, "Invalid level")
-    token = sign_unsubscribe_token(secret, h, req.level, target, target_name)
+    token = sign_unsubscribe_token(secret, req.level, target, target_name, h)
     url = f"{BASE_URL}/u?t={token}"
+    if req.email:
+        url += f"&e={req.email}"
     return GenerateLinkResponse(unsubscribe_url=url, token=token)
 
 

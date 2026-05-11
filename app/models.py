@@ -26,7 +26,7 @@ class SuppressionStore(BaseModel):
 
 
 class GenerateLinkRequest(BaseModel):
-    email: str
+    email: Optional[str] = None
     level: str = Field(pattern=r"^(global|network|offer)$")
     network_id: Optional[str] = None
     network_name: Optional[str] = None
@@ -37,6 +37,11 @@ class GenerateLinkRequest(BaseModel):
 class GenerateLinkResponse(BaseModel):
     unsubscribe_url: str
     token: str
+
+
+class UnsubscribeFormRequest(BaseModel):
+    token: str
+    email: str
 
 
 class CheckRequest(BaseModel):
