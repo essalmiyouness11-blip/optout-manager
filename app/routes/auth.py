@@ -23,16 +23,16 @@ def setup_form():
 <title>Setup Admin</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}
-  .card{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);width:100%;max-width:400px}
-  h1{margin:0 0 0.25rem;font-size:1.5rem;color:#333}
-  p{margin:0 0 1.5rem;color:#666}
-  label{display:block;margin-bottom:0.25rem;font-weight:600;color:#444;font-size:0.875rem}
-  input{width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:6px;font-size:1rem;margin-bottom:1rem}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:1rem}
+  .card{background:white;padding:1.5rem;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);width:100%;max-width:400px}
+  h1{margin:0 0 0.25rem;font-size:1.35rem;color:#333}
+  p{margin:0 0 1.25rem;color:#666;font-size:0.9rem}
+  label{display:block;margin-bottom:0.25rem;font-weight:600;color:#444;font-size:0.85rem}
+  input{width:100%;padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:1rem;margin-bottom:1rem;min-height:42px}
   input:focus{outline:none;border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,0.2)}
-  button{width:100%;padding:0.75rem;background:#1976d2;color:white;border:none;border-radius:6px;font-size:1rem;cursor:pointer;font-weight:600}
+  button{width:100%;padding:0.75rem;background:#1976d2;color:white;border:none;border-radius:6px;font-size:1rem;cursor:pointer;font-weight:600;min-height:44px;touch-action:manipulation}
   button:hover{background:#1565c0}
-  .error{color:#d32f2f;font-size:0.875rem;margin-bottom:1rem;display:none}
+  .error{color:#d32f2f;font-size:0.85rem;margin-bottom:1rem;display:none;word-wrap:break-word}
 </style>
 </head>
 <body>
@@ -54,7 +54,7 @@ def setup_form():
     const res = await fetch('/auth/setup', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({email: this.email.value, password: this.password.value})
+      body: JSON.stringify({email: this.email.value.toLowerCase(), password: this.password.value})
     });
     if (res.ok) { window.location.href = '/admin'; return; }
     const data = await res.json();
@@ -85,15 +85,15 @@ def login_form():
 <title>Login</title>
 <style>
   *{box-sizing:border-box}
-  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0}
-  .card{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);width:100%;max-width:400px}
-  h1{margin:0 0 1.5rem;font-size:1.5rem;color:#333}
-  label{display:block;margin-bottom:0.25rem;font-weight:600;color:#444;font-size:0.875rem}
-  input{width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:6px;font-size:1rem;margin-bottom:1rem}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:1rem}
+  .card{background:white;padding:1.5rem;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);width:100%;max-width:400px}
+  h1{margin:0 0 1.25rem;font-size:1.35rem;color:#333}
+  label{display:block;margin-bottom:0.25rem;font-weight:600;color:#444;font-size:0.85rem}
+  input{width:100%;padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:1rem;margin-bottom:1rem;min-height:42px}
   input:focus{outline:none;border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,0.2)}
-  button{width:100%;padding:0.75rem;background:#1976d2;color:white;border:none;border-radius:6px;font-size:1rem;cursor:pointer;font-weight:600}
+  button{width:100%;padding:0.75rem;background:#1976d2;color:white;border:none;border-radius:6px;font-size:1rem;cursor:pointer;font-weight:600;min-height:44px;touch-action:manipulation}
   button:hover{background:#1565c0}
-  .error{color:#d32f2f;font-size:0.875rem;margin-bottom:1rem;display:none}
+  .error{color:#d32f2f;font-size:0.85rem;margin-bottom:1rem;display:none;word-wrap:break-word}
 </style>
 </head>
 <body>
@@ -114,7 +114,7 @@ def login_form():
     const res = await fetch('/auth/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({email: this.email.value, password: this.password.value})
+      body: JSON.stringify({email: this.email.value.toLowerCase(), password: this.password.value})
     });
     if (res.ok) { window.location.href = '/admin'; return; }
     const data = await res.json();

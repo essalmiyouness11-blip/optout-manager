@@ -49,35 +49,38 @@ _PAGE = """<!DOCTYPE html>
 <title>%s</title>
 <style>
 *{box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;margin:0;padding:0}
-.nav{background:#1a1a2e;color:white;padding:0.75rem 2rem;display:flex;justify-content:space-between;align-items:center}
-.nav .user{font-size:0.8rem;color:#999}
-.nav a{color:#ccc;text-decoration:none;margin-left:1rem;font-size:0.85rem}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;margin:0;padding:0;font-size:16px}
+.nav{background:#1a1a2e;color:white;padding:0.6rem 1rem;display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:0.5rem}
+.nav .user{font-size:0.75rem;color:#999;word-break:break-all}
+.nav a{color:#ccc;text-decoration:none;margin-left:0.75rem;font-size:0.8rem;white-space:nowrap}
 .nav a:hover{color:white}
-.tabs{display:flex;background:#fff;border-bottom:1px solid #ddd;padding:0 1rem}
-.tab{padding:0.7rem 1.25rem;text-decoration:none;color:#666;font-size:0.85rem;border-bottom:2px solid transparent}
+.tabs{display:flex;flex-wrap:wrap;background:#fff;border-bottom:1px solid #ddd;padding:0 0.5rem;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.tab{padding:0.6rem 0.8rem;text-decoration:none;color:#666;font-size:0.8rem;border-bottom:2px solid transparent;white-space:nowrap}
 .tab.active{color:#1976d2;border-bottom-color:#1976d2;font-weight:600}
 .tab:hover{color:#333}
-.container{max-width:900px;margin:1.5rem auto;padding:0 1rem}
-.card{background:white;padding:1.5rem 2rem;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:1rem}
-.card h2{margin:0 0 1rem;font-size:1.2rem;color:#333}
-.btn{padding:0.5rem 1rem;background:#1976d2;color:white;border:none;border-radius:5px;cursor:pointer;font-size:0.85rem}
+.container{max-width:960px;margin:1rem auto;padding:0 0.75rem}
+.card{background:white;padding:1rem 1.25rem;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:1rem;overflow:hidden}
+.card h2{margin:0 0 0.75rem;font-size:1.1rem;color:#333;word-wrap:break-word}
+.btn{padding:0.5rem 0.9rem;background:#1976d2;color:white;border:none;border-radius:5px;cursor:pointer;font-size:0.85rem;min-height:36px;touch-action:manipulation}
 .btn:hover{background:#1565c0}
-.btn-sm{padding:0.3rem 0.6rem;font-size:0.75rem;background:#1976d2;color:white;border:none;border-radius:4px;cursor:pointer}
+.btn-sm{padding:0.35rem 0.55rem;font-size:0.75rem;background:#1976d2;color:white;border:none;border-radius:4px;cursor:pointer;min-height:30px;touch-action:manipulation;white-space:nowrap}
 .btn-sm:hover{background:#1565c0}
-.btn-del{padding:0.3rem 0.6rem;font-size:0.75rem;background:#d32f2f;color:white;border:none;border-radius:4px;cursor:pointer}
+.btn-del{padding:0.35rem 0.55rem;font-size:0.75rem;background:#d32f2f;color:white;border:none;border-radius:4px;cursor:pointer;min-height:30px;touch-action:manipulation}
 .btn-del:hover{background:#b71c1c}
-input,select{width:100%%;padding:0.5rem;border:1px solid #ccc;border-radius:5px;font-size:0.9rem;margin-bottom:0.75rem}
+input,select{width:100%%;padding:0.5rem;border:1px solid #ccc;border-radius:5px;font-size:0.9rem;margin-bottom:0.75rem;min-height:38px}
 input:focus,select:focus{outline:none;border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,0.15)}
-table{width:100%%;border-collapse:collapse}
-th,td{text-align:left;padding:0.5rem 0.5rem;border-bottom:1px solid #eee;font-size:0.85rem}
-th{font-weight:600;color:#555;font-size:0.8rem;text-transform:uppercase}
-.flex{display:flex;gap:0.5rem;align-items:center}
-.msg{padding:0.6rem;border-radius:5px;margin-bottom:0.75rem;display:none;font-size:0.85rem}
+.table-wrap{width:100%%;overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{width:100%%;border-collapse:collapse;min-width:auto}
+th,td{text-align:left;padding:0.5rem 0.4rem;border-bottom:1px solid #eee;font-size:0.82rem;word-wrap:break-word;word-break:break-word}
+th{font-weight:600;color:#555;font-size:0.75rem;text-transform:uppercase;white-space:nowrap}
+.flex{display:flex;gap:0.35rem;align-items:center;flex-wrap:wrap}
+.msg{padding:0.5rem 0.6rem;border-radius:5px;margin-bottom:0.75rem;display:none;font-size:0.82rem;word-wrap:break-word}
 .msg.ok{background:#e8f5e9;color:#2e7d32;display:block}
 .msg.err{background:#ffebee;color:#d32f2f;display:block}
-.muted{color:#999;font-size:0.8rem}
+.muted{color:#999;font-size:0.78rem}
 .hidden{display:none}
+code{word-break:break-all;font-size:0.7rem}
+@media(max-width:600px){.container{padding:0 0.5rem}.card{padding:0.75rem 0.9rem;border-radius:8px}.card h2{font-size:1rem}.nav{padding:0.5rem 0.75rem;flex-direction:column;align-items:stretch;text-align:center}.nav>div{display:flex;justify-content:center;flex-wrap:wrap}.tabs{padding:0 0.25rem}.tab{padding:0.5rem 0.6rem;font-size:0.75rem}th,td{padding:0.4rem 0.3rem;font-size:0.75rem}input,select{font-size:0.85rem;min-height:40px}.btn,.btn-sm,.btn-del{min-height:34px;padding:0.4rem 0.6rem;font-size:0.75rem}.flex{gap:0.25rem}table{font-size:0.75rem}}
 </style>
 </head>
 <body>
@@ -230,8 +233,8 @@ def networks_page(payload: dict = Depends(require_admin)):
 </div>
 <div class="card">
   <h2>All Networks</h2>
-  <table><thead><tr><th>ID</th><th>Name</th><th>Created</th><th></th></tr></thead>
-  <tbody>{rows or '<tr><td colspan="4" class="muted">No networks yet</td></tr>'}</tbody></table>
+  <div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Created</th><th></th></tr></thead>
+  <tbody>{rows or '<tr><td colspan="4" class="muted">No networks yet</td></tr>'}</tbody></table></div>
 </div>
 <script>
 document.getElementById('form').addEventListener('submit',async function(e){{
@@ -321,8 +324,8 @@ def offers_page(payload: dict = Depends(require_admin)):
 </div>
 <div class="card">
   <h2>All Offers</h2>
-  <table><thead><tr><th>ID</th><th>Name</th><th>Network</th><th>Created</th><th></th></tr></thead>
-  <tbody>{rows or '<tr><td colspan="5" class="muted">No offers yet</td></tr>'}</tbody></table>
+  <div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Network</th><th>Created</th><th></th></tr></thead>
+  <tbody>{rows or '<tr><td colspan="5" class="muted">No offers yet</td></tr>'}</tbody></table></div>
 </div>
 <script>
 document.getElementById('form').addEventListener('submit',async function(e){{
@@ -427,11 +430,11 @@ def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
 <p><a href="/admin/offers" style="color:#1976d2;text-decoration:none;font-size:0.85rem">&larr; Back to Offers</a></p>
 <div class="card">
   <h2>Offer: {off.name}</h2>
-  <table>
+  <div class="table-wrap"><table>
     <tr><td><strong>ID</strong></td><td>{off.id}</td></tr>
     <tr><td><strong>Network</strong></td><td>{net_name} ({off.network_id})</td></tr>
     <tr><td><strong>Created</strong></td><td>{off.created_at}</td></tr>
-  </table>
+  </table></div>
 </div>
 
 <div class="card">
@@ -449,9 +452,9 @@ def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
   <p style="font-size:1.5rem;font-weight:700;color:#d32f2f" id="stat-total">Loading...</p>
   <p class="muted">Total unsubscribed emails</p>
   <h3 style="margin-top:1rem;font-size:1rem">Per TLD / Email Domain</h3>
-  <table><thead><tr><th>Domain</th><th>Count</th><th>Download</th></tr></thead>
+  <div class="table-wrap"><table><thead><tr><th>Domain</th><th>Count</th><th>Download</th></tr></thead>
     <tbody id="tld-body"><tr><td colspan="3" class="muted">Loading...</td></tr></tbody>
-  </table>
+  </table></div>
 </div>
 
 <script>
@@ -500,13 +503,13 @@ def dashboard_page(payload: dict = Depends(require_admin)):
 </div>
 <div class="card">
   <h2>Unsubscribers per Network</h2>
-  <table><thead><tr><th>Network</th><th>ID</th><th>Unsubscribers</th></tr></thead>
-  <tbody>{net_rows or '<tr><td colspan="3" class="muted">No network unsubscribers yet</td></tr>'}</tbody></table>
+  <div class="table-wrap"><table><thead><tr><th>Network</th><th>ID</th><th>Unsubscribers</th></tr></thead>
+  <tbody>{net_rows or '<tr><td colspan="3" class="muted">No network unsubscribers yet</td></tr>'}</tbody></table></div>
 </div>
 <div class="card">
   <h2>Unsubscribers per Offer</h2>
-  <table><thead><tr><th>Offer</th><th>ID</th><th>Unsubscribers</th></tr></thead>
-  <tbody>{off_rows or '<tr><td colspan="3" class="muted">No offer unsubscribers yet</td></tr>'}</tbody></table>
+  <div class="table-wrap"><table><thead><tr><th>Offer</th><th>ID</th><th>Unsubscribers</th></tr></thead>
+  <tbody>{off_rows or '<tr><td colspan="3" class="muted">No offer unsubscribers yet</td></tr>'}</tbody></table></div>
 </div>"""
     return _page("Dashboard", payload["sub"], payload["role"], "dashboard", content)
 
@@ -538,8 +541,8 @@ def users_page(payload: dict = Depends(require_admin)):
 </div>
 <div class="card">
   <h2>All Users</h2>
-  <table><thead><tr><th>Email</th><th>Role</th><th>API Key</th><th>Created</th><th></th></tr></thead>
-  <tbody>{rows}</tbody></table>
+  <div class="table-wrap"><table><thead><tr><th>Email</th><th>Role</th><th>API Key</th><th>Created</th><th></th></tr></thead>
+  <tbody>{rows}</tbody></table></div>
 </div>
 <script>
 async function addUser(){{
@@ -617,8 +620,8 @@ def unsubscribers_page(payload: dict = Depends(require_admin)):
   <h2>Results <span id="result-count" class="muted"></span></h2>
   <div id="loading" style="text-align:center;padding:2rem;color:#999">Select filters and click Search</div>
   <div id="result-table" style="display:none">
-    <table><thead><tr><th>Email</th><th>MD5</th><th>SHA256</th><th>Date</th></tr></thead>
-    <tbody id="result-body"></tbody></table>
+    <div class="table-wrap"><table><thead><tr><th>Email</th><th>MD5</th><th>SHA256</th><th>Date</th></tr></thead>
+    <tbody id="result-body"></tbody></table></div>
   </div>
 </div>
 <script>
@@ -771,14 +774,14 @@ def dashboard_page(payload: dict = Depends(require_admin)):
 <div class="card">
   <h2>Network Suppression Links</h2>
   <p class="muted">Links are permanent and auto-update when new unsubscribers are added</p>
-  <table><thead><tr><th>Network</th><th>ID</th><th>Count</th><th>Links</th></tr></thead>
-  <tbody>{net_rows or '<tr><td colspan="4" class="muted">No data</td></tr>'}</tbody></table>
+  <div class="table-wrap"><table><thead><tr><th>Network</th><th>ID</th><th>Count</th><th>Links</th></tr></thead>
+  <tbody>{net_rows or '<tr><td colspan="4" class="muted">No data</td></tr>'}</tbody></table></div>
 </div>
 <div class="card">
   <h2>Offer Suppression Links</h2>
   <p class="muted">Each link is unique per offer, stays the same, always returns latest unsubscribers</p>
-  <table><thead><tr><th>Offer</th><th>ID</th><th>Network</th><th>Count</th><th>Links</th></tr></thead>
-  <tbody>{off_rows or '<tr><td colspan="5" class="muted">No data</td></tr>'}</tbody></table>
+  <div class="table-wrap"><table><thead><tr><th>Offer</th><th>ID</th><th>Network</th><th>Count</th><th>Links</th></tr></thead>
+  <tbody>{off_rows or '<tr><td colspan="5" class="muted">No data</td></tr>'}</tbody></table></div>
 </div>
 <div id="feed-msg" class="msg"></div>
 <script>

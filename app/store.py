@@ -74,9 +74,10 @@ def record_unsubscribe(
 
         md5_val = ""
         if email:
-            entry.email = email
+            email_lower = email.strip().lower()
+            entry.email = email_lower
             from .crypto import md5_email
-            md5_val = md5_email(email)
+            md5_val = md5_email(email_lower)
             entry.md5 = md5_val
 
         if level == "global":
@@ -94,7 +95,7 @@ def record_unsubscribe(
                 existing = {r.get("sha256", "") for r in offer.unsubscribers}
                 if email_hash not in existing:
                     offer.unsubscribers.append({
-                        "email": email,
+                        "email": email_lower,
                         "md5": md5_val,
                         "sha256": email_hash,
                         "timestamp": now,

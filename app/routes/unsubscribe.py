@@ -20,10 +20,11 @@ def _unsub_page(message: str) -> str:
 <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Unsubscribed</title>
 <style>
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f5f5f5}}
-  .card{{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,0.1);text-align:center;max-width:400px}}
-  h1{{color:#2e7d32;margin:0 0 0.5rem}}
-  p{{color:#555;line-height:1.5;margin:0.5rem 0}}
+  *{{box-sizing:border-box}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f5f5f5;padding:1rem}}
+  .card{{background:white;padding:1.5rem;border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,0.1);text-align:center;max-width:400px;width:100%}}
+  h1{{color:#2e7d32;margin:0 0 0.5rem;font-size:1.4rem}}
+  p{{color:#555;line-height:1.5;margin:0.5rem 0;font-size:0.95rem;word-wrap:break-word}}
 </style>
 </head>
 <body>
@@ -42,15 +43,15 @@ def _email_form(token: str) -> str:
 <title>Unsubscribe</title>
 <style>
   *{{box-sizing:border-box}}
-  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f5f5f5}}
-  .card{{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,0.1);text-align:center;max-width:380px}}
-  h1{{color:#333;margin:0 0 0.25rem;font-size:1.3rem}}
+  body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;background:#f5f5f5;padding:1rem}}
+  .card{{background:white;padding:1.5rem;border-radius:12px;box-shadow:0 2px 4px rgba(0,0,0,0.1);text-align:center;max-width:380px;width:100%}}
+  h1{{color:#333;margin:0 0 0.25rem;font-size:1.25rem}}
   p{{color:#666;margin:0.5rem 0 1.25rem;font-size:0.9rem}}
-  input{{width:100%;padding:0.6rem;border:1px solid #ccc;border-radius:6px;font-size:1rem;margin-bottom:0.75rem}}
+  input{{width:100%;padding:0.65rem;border:1px solid #ccc;border-radius:6px;font-size:1rem;margin-bottom:0.75rem;min-height:42px}}
   input:focus{{outline:none;border-color:#1976d2;box-shadow:0 0 0 2px rgba(25,118,210,0.2)}}
-  button{{width:100%;padding:0.7rem;background:#d32f2f;color:white;border:none;border-radius:6px;font-size:1rem;cursor:pointer;font-weight:600}}
+  button{{width:100%;padding:0.7rem;background:#d32f2f;color:white;border:none;border-radius:6px;font-size:1rem;cursor:pointer;font-weight:600;min-height:44px;touch-action:manipulation}}
   button:hover{{background:#b71c1c}}
-  .error{{color:#d32f2f;font-size:0.85rem;margin-bottom:0.5rem;display:none}}
+  .error{{color:#d32f2f;font-size:0.85rem;margin-bottom:0.5rem;display:none;word-wrap:break-word}}
 </style>
 </head>
 <body>
@@ -69,7 +70,7 @@ def _email_form(token: str) -> str:
     const res = await fetch('/u', {{
       method: 'POST',
       headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{token: '{token}', email: this.email.value}})
+      body: JSON.stringify({{token: '{token}', email: this.email.value.toLowerCase()}})
     }});
     if (res.ok) {{ location.reload(); return; }}
     const data = await res.json();
