@@ -415,18 +415,16 @@ def get_all_statistics(fernet: Fernet) -> dict:
     net_details = []
     for n in (store.networks or {}).values():
         c = network_counts.get(n.id, 0)
-        if c > 0:
-            net_details.append({"id": n.id, "name": n.name, "count": c})
+        net_details.append({"id": n.id, "name": n.name, "count": c})
 
     off_details = []
     for o in (store.offers or {}).values():
         c = offer_counts.get(o.id, 0)
-        if c > 0:
-            net_name = ""
-            net = (store.networks or {}).get(o.network_id)
-            if net:
-                net_name = net.name
-            off_details.append({"id": o.id, "name": o.name, "network": net_name, "count": c})
+        net_name = ""
+        net = (store.networks or {}).get(o.network_id)
+        if net:
+            net_name = net.name
+        off_details.append({"id": o.id, "name": o.name, "network": net_name, "count": c})
 
     return {
         "total_suppressed": total_suppressed,
