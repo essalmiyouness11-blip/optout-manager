@@ -81,7 +81,7 @@ def record_unsubscribe(
             entry.md5 = md5_val
 
         if level == "global":
-            entry.global_ = True
+            entry.global_ = now
             entry.networks.clear()
             entry.offers.clear()
         elif level == "network":
@@ -146,7 +146,7 @@ def get_status(fernet: Fernet, email_hash: str) -> dict:
     return {
         "email_hash": email_hash,
         "suppressed": entry.global_ or bool(entry.networks) or bool(entry.offers),
-        "global_suppressed": entry.global_,
+        "global_suppressed": bool(entry.global_),
         "network_suppressions": list(entry.networks.keys()),
         "offer_suppressions": list(entry.offers.keys()),
     }

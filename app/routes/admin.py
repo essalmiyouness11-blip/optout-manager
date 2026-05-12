@@ -289,8 +289,8 @@ function paginate(tbodyId,pagerId,pageSize){{
     page=Math.max(1,Math.min(p,total));
     rows.forEach((r,i)=>r.style.display=i>=(page-1)*pageSize&&i<page*pageSize?'':'none');
     document.getElementById(pagerId).innerHTML='<span style="font-size:0.8rem;color:#666">Page '+page+'/'+total+' </span>'+
-      (page>1?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page-1)+')" style="margin:0 0.15rem">&larr; Prev</button>':'')+
-      (page<total?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page+1)+')" style="margin:0 0.15rem">Next &rarr;</button>':'');
+      (page>1?'<button class="btn-sm" onclick="showPage(&apos;'+tbodyId+'&apos;,&apos;'+pagerId+'&apos;,&apos;'+pageSize+'&apos;,'+(page-1)+')" style="margin:0 0.15rem">&larr; Prev</button>':'')+
+      (page<total?'<button class="btn-sm" onclick="showPage(&apos;'+tbodyId+'&apos;,&apos;'+pagerId+'&apos;,&apos;'+pageSize+'&apos;,'+(page+1)+')" style="margin:0 0.15rem">Next &rarr;</button>':'');
     document.getElementById(pagerId).style.display='';
   }}
   show(1);return show;
@@ -414,8 +414,8 @@ function paginate(tbodyId,pagerId,pageSize){{
     page=Math.max(1,Math.min(p,total));
     rows.forEach((r,i)=>r.style.display=i>=(page-1)*pageSize&&i<page*pageSize?'':'none');
     document.getElementById(pagerId).innerHTML='<span style="font-size:0.8rem;color:#666">Page '+page+'/'+total+' </span>'+
-      (page>1?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page-1)+')">&larr; Prev</button>':'')+
-      (page<total?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page+1)+')">Next &rarr;</button>':'');
+      (page>1?'<button class="btn-sm" onclick="showPage(&apos;'+tbodyId+'&apos;,&apos;'+pagerId+'&apos;,&apos;'+pageSize+'&apos;,'+(page-1)+')">&larr; Prev</button>':'')+
+      (page<total?'<button class="btn-sm" onclick="showPage(&apos;'+tbodyId+'&apos;,&apos;'+pagerId+'&apos;,&apos;'+pageSize+'&apos;,'+(page+1)+')">Next &rarr;</button>':'');
     document.getElementById(pagerId).style.display='';
   }}
   show(1);return show;
@@ -649,37 +649,6 @@ function unsubMsg(t,c){{const el=document.getElementById('unsub-msg');el.textCon
     return _page(f"Offer: {off.name}", payload["sub"], payload["role"], "offers", content)
 
 
-# ── Dashboard ──
-
-@router.get("/admin/dashboard", response_class=HTMLResponse)
-def dashboard_page(payload: dict = Depends(require_admin)):
-    data = get_dashboard(fernet)
-    net_rows = "".join(
-        f'<tr><td>{n["name"]}</td><td>{n["id"]}</td><td>{n["unsubscribers"]}</td></tr>'
-        for n in data["networks"]
-    )
-    off_rows = "".join(
-        f'<tr><td>{o["name"]}</td><td>{o["id"]}</td><td>{o["unsubscribers"]}</td></tr>'
-        for o in data["offers"]
-    )
-    content = f"""
-<div class="card">
-  <h2>Global Opt-Outs</h2>
-  <p style="font-size:1.5rem;font-weight:700;color:#d32f2f">{data["global_count"]}</p>
-</div>
-<div class="card">
-  <h2>Unsubscribers per Network</h2>
-  <div class="table-wrap"><table><thead><tr><th>Network</th><th>ID</th><th>Unsubscribers</th></tr></thead>
-  <tbody>{net_rows or '<tr><td colspan="3" class="muted">No network unsubscribers yet</td></tr>'}</tbody></table></div>
-</div>
-<div class="card">
-  <h2>Unsubscribers per Offer</h2>
-  <div class="table-wrap"><table><thead><tr><th>Offer</th><th>ID</th><th>Unsubscribers</th></tr></thead>
-  <tbody>{off_rows or '<tr><td colspan="3" class="muted">No offer unsubscribers yet</td></tr>'}</tbody></table></div>
-</div>"""
-    return _page("Dashboard", payload["sub"], payload["role"], "dashboard", content)
-
-
 # ── Users ──
 
 @router.get("/admin/users", response_class=HTMLResponse)
@@ -728,8 +697,8 @@ function paginate(tbodyId,pagerId,pageSize){{
     page=Math.max(1,Math.min(p,total));
     rows.forEach((r,i)=>r.style.display=i>=(page-1)*pageSize&&i<page*pageSize?'':'none');
     document.getElementById(pagerId).innerHTML='<span style="font-size:0.8rem;color:#666">Page '+page+'/'+total+' </span>'+
-      (page>1?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page-1)+')">&larr; Prev</button>':'')+
-      (page<total?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page+1)+')">Next &rarr;</button>':'');
+      (page>1?'<button class="btn-sm" onclick="showPage(&apos;'+tbodyId+'&apos;,&apos;'+pagerId+'&apos;,&apos;'+pageSize+'&apos;,'+(page-1)+')">&larr; Prev</button>':'')+
+      (page<total?'<button class="btn-sm" onclick="showPage(&apos;'+tbodyId+'&apos;,&apos;'+pagerId+'&apos;,&apos;'+pageSize+'&apos;,'+(page+1)+')">Next &rarr;</button>':'');
     document.getElementById(pagerId).style.display='';
   }}
   show(1);return show;

@@ -12,6 +12,13 @@ router = APIRouter()
 fernet = make_fernet(os.environ["SECRET_KEY"])
 
 
+def _cookie_secure() -> bool:
+    val = os.environ.get("SECURE_COOKIE", "")
+    if val:
+        return val.lower() in ("true", "1", "yes")
+    return os.environ.get("BASE_URL", "").startswith("https://")
+
+
 @router.get("/auth/setup", response_class=HTMLResponse)
 def setup_form():
     if user_count(fernet) > 0:
@@ -98,7 +105,7 @@ def setup_submit(req: SetupRequest, response: Response):
         key="session",
         value=token,
         httponly=True,
-        secure=False,
+        secure=_cookie_secure(),
         samesite="lax",
         max_age=86400,
     )
@@ -165,7 +172,7 @@ def login_submit(req: LoginRequest, response: Response):
         key="session",
         value=token,
         httponly=True,
-        secure=False,
+        secure=_cookie_secure(),
         samesite="lax",
         max_age=86400,
     )

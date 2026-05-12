@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 
 from ..crypto import verify_unsubscribe_token, make_fernet, hash_email
-from ..store import record_unsubscribe, check_suppression
+from ..store import record_unsubscribe, check_suppression, get_network, get_offer
 from ..models import CheckRequest, CheckResponse, UnsubscribeFormRequest
 
 router = APIRouter()
@@ -12,6 +12,16 @@ router = APIRouter()
 
 def _get_fernet():
     return make_fernet(os.environ["SECRET_KEY"])
+
+
+def _lookup_target_name(fernet, level: str, target: str) -> str | None:
+    if level == "network":
+        net = get_network(fernet, target)
+        return net.name if net else None
+    elif level == "offer":
+        off = get_offer(fernet, target)
+        return off.name if off else None
+    return None
 
 
 _SUCCESS_HTML = """<!DOCTYPE html>
@@ -103,8 +113,10 @@ def unsubscribe_get(token: str = Query(..., alias="t"), email: str = Query(None,
     if payload is None:
         return HTMLResponse("<h1>Invalid or expired link</h1>", status_code=400)
 
-    level = payload["l"]
-    target = payload["t"]
+    level = payload.get("l")
+    target = payload.get("t")
+    if not level or not target:
+        return HTMLResponse("<h1>Invalid or expired link</h1>", status_code=400)
 
     # Token has email hash → auto-unsubscribe (no email stored)
     if payload.get("h"):
@@ -116,7 +128,8 @@ def unsubscribe_get(token: str = Query(..., alias="t"), email: str = Query(None,
     if email:
         fernet = _get_fernet()
         h = hash_email(email)
-        record_unsubscribe(fernet, h, level, target, email=email)
+        target_name = _lookup_target_name(fernet, level, target)
+        record_unsubscribe(fernet, h, level, target, target_name=target_name, email=email)
         return RedirectResponse(url="/u/success", status_code=302)
 
     # Show clean form (no offer/network info)
@@ -130,9 +143,15 @@ def unsubscribe_submit(req: UnsubscribeFormRequest):
     if payload is None:
         raise HTTPException(400, "Invalid or expired token")
 
+    level = payload.get("l")
+    target = payload.get("t")
+    if not level or not target:
+        raise HTTPException(400, "Invalid or expired token")
+
     fernet = _get_fernet()
     h = hash_email(req.email)
-    record_unsubscribe(fernet, h, payload["l"], payload["t"], email=req.email)
+    target_name = _lookup_target_name(fernet, level, target)
+    record_unsubscribe(fernet, h, level, target, target_name=target_name, email=req.email)
 
     return {"status": "ok", "message": "Unsubscribed"}
 

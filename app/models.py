@@ -11,7 +11,7 @@ class UserEntry(BaseModel):
 
 
 class SuppressionEntry(BaseModel):
-    global_: bool = Field(default=False, alias="global")
+    global_: int = Field(default=0, alias="global")
     networks: dict[str, int] = Field(default_factory=dict)
     offers: dict[str, int] = Field(default_factory=dict)
     email: str = ""
