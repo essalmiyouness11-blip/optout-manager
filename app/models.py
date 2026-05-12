@@ -25,6 +25,7 @@ class AffiliateNetworkEntry(BaseModel):
     id: str
     name: str
     feed_token: str = ""
+    unsub_token: str = ""
     created_at: int = 0
 
 
@@ -33,6 +34,7 @@ class OfferEntry(BaseModel):
     name: str
     network_id: str
     feed_token: str = ""
+    unsub_token: str = ""
     created_at: int = 0
     unsubscribers: list[dict] = Field(default_factory=list)
 
@@ -49,6 +51,7 @@ class GenerateLinkRequest(BaseModel):
     level: str = Field(pattern=r"^(global|network|offer)$")
     network_id: Optional[str] = None
     offer_id: Optional[str] = None
+    regenerate: bool = False
 
 
 class GenerateLinkResponse(BaseModel):

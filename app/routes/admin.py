@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from ..auth import get_current_user, require_admin, hash_password
-from ..crypto import make_fernet, sign_unsubscribe_token
+from ..crypto import make_fernet
 from ..store import (
     export_suppressions, import_suppressions,
     list_users, create_user, delete_user,
@@ -155,29 +155,47 @@ def generate_page(payload: dict = Depends(get_current_user)):
     content = f"""
 <div class="card">
   <h2>Generate Unsubscribe Link</h2>
+  <p class="muted" style="margin-bottom:0.75rem">Select a network or offer to generate permanent unsubscribe links. Links are stable and reused until explicitly regenerated.</p>
   <div id="msg" class="msg"></div>
   <form id="form">
-    <label>Network</label>
+    <label style="font-weight:600;font-size:0.85rem;display:block;margin-bottom:0.25rem">Network</label>
     <input type="text" id="net-search" placeholder="Type to search networks..." style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.9rem;margin-bottom:0.35rem">
-    <select id="network" name="network_id" size="5" style="width:100%;font-size:0.85rem">
+    <select id="network" name="network_id" size="4" style="width:100%;font-size:0.85rem;border:1px solid #ccc;border-radius:4px;padding:0.25rem">
       <option value="">-- Select Network --</option>
       {net_opts}
     </select>
-    <div id="offer-field" class="hidden">
-      <label>Offer</label>
+    <div id="offer-field" class="hidden" style="margin-top:0.75rem">
+      <label style="font-weight:600;font-size:0.85rem;display:block;margin-bottom:0.25rem">Offer</label>
       <input type="text" id="off-search" placeholder="Type to search offers..." style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.9rem;margin-bottom:0.35rem">
-      <select id="offer" name="offer_id" size="5" style="width:100%;font-size:0.85rem">
+      <select id="offer" name="offer_id" size="4" style="width:100%;font-size:0.85rem;border:1px solid #ccc;border-radius:4px;padding:0.25rem">
         <option value="">-- Select Offer --</option>
       </select>
     </div>
-    <button type="submit" class="btn" style="margin-top:0.5rem">Generate Link</button>
+    <div style="display:flex;gap:0.5rem;margin-top:0.75rem">
+      <button type="submit" class="btn">Generate Link</button>
+      <button type="button" class="btn" style="background:#e65100" id="regenerate-btn" onclick="regenerateLink()">Regenerate</button>
+    </div>
   </form>
-  <div id="result" style="display:none;margin-top:1rem;padding:1rem;background:#e8f5e9;border-radius:6px;word-break:break-all">
-    <strong>Unsubscribe URL:</strong><br>
-    <a id="result-url" href="#" target="_blank"></a><br><br>
-    <strong>Token:</strong><br>
-    <code id="result-token" style="font-size:0.75rem;word-break:break-all"></code><br><br>
-    <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('result-url').href).then(()=>alert('Copied!'))">Copy URL</button>
+  <div id="result" style="display:none;margin-top:1rem">
+    <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;padding:1rem">
+      <div style="margin-bottom:0.75rem">
+        <label style="font-weight:600;font-size:0.85rem;display:block;margin-bottom:0.25rem">Standard Link <span class="muted">(user enters email)</span></label>
+        <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+          <input type="text" id="result-url-std" readonly style="flex:1;min-width:200px;padding:0.4rem 0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#f9f9f9;color:#333">
+          <button class="btn-sm" onclick="copyInput('result-url-std')">Copy</button>
+        </div>
+      </div>
+      <div style="margin-bottom:0.5rem">
+        <label style="font-weight:600;font-size:0.85rem;display:block;margin-bottom:0.25rem">Auto-Unsubscribe Link <span class="muted">(no form, must include email)</span></label>
+        <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+          <input type="text" id="result-url-auto" readonly style="flex:1;min-width:200px;padding:0.4rem 0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#f9f9f9;color:#333">
+          <button class="btn-sm" onclick="copyInput('result-url-auto')">Copy</button>
+        </div>
+      </div>
+      <div style="font-size:0.75rem;color:#666;word-break:break-all;margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid #c8e6c9">
+        <strong>Token:</strong> <code id="result-token" style="font-size:0.7rem;word-break:break-all"></code>
+      </div>
+    </div>
   </div>
 </div>
 <script>
@@ -200,7 +218,27 @@ document.getElementById('network').addEventListener('change',function(){{
   document.getElementById('offer-field').classList.toggle('hidden',!this.value);
   document.getElementById('off-search').value='';
   for(let i=0;i<sel.options.length;i++) sel.options[i].style.display='';
+  document.getElementById('result').style.display='none';
+  document.getElementById('msg').style.display='none';
 }});
+function showResult(data){{
+  document.getElementById('result-url-std').value=data.unsubscribe_url;
+  document.getElementById('result-url-auto').value=data.unsubscribe_url+'&e=user@example.com';
+  document.getElementById('result-token').textContent=data.token;
+  document.getElementById('result').style.display='block';
+  document.getElementById('msg').style.display='none';
+}}
+async function regenerateLink(){{
+  const nid = document.getElementById('network').value;
+  const oid = document.getElementById('offer').value;
+  if(!nid){{msg('Select a network first','err');return;}}
+  const body = oid ? {{level:'offer',network_id:nid,offer_id:oid,regenerate:true}} : {{level:'network',network_id:nid,regenerate:true}};
+  const res=await fetch('/admin/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
+  if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
+  const data=await res.json();
+  showResult(data);
+  msg('New links regenerated!','ok');
+}}
 document.getElementById('form').addEventListener('submit',async function(e){{
   e.preventDefault();
   const nid = document.getElementById('network').value;
@@ -210,32 +248,29 @@ document.getElementById('form').addEventListener('submit',async function(e){{
   const res=await fetch('/admin/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});
   if(!res.ok){{const d=await res.json();msg(d.detail||'Error','err');return;}}
   const data=await res.json();
-  document.getElementById('result-url').href=data.unsubscribe_url;
-  document.getElementById('result-url').textContent=data.unsubscribe_url;
-  document.getElementById('result-token').textContent=data.token;
-  document.getElementById('result').style.display='block';
-  document.getElementById('msg').style.display='none';
+  showResult(data);
 }});
 function msg(t,c){{const el=document.getElementById('msg');el.textContent=t;el.className='msg '+c;el.style.display='block'}}
+function copyInput(id){{const el=document.getElementById(id);navigator.clipboard.writeText(el.value).then(()=>msg('Copied!','ok'))}}
 </script>"""
     return _page("Generate Link", payload["sub"], payload["role"], "generate", content)
 
 
 @router.post("/admin/generate", response_model=GenerateLinkResponse)
 def generate_link(req: GenerateLinkRequest, _=Depends(get_current_user)):
-    secret = os.environ["SECRET_KEY"]
+    from ..store import generate_unsub_token, regenerate_unsub_token
     if req.level == "network":
         net = get_network(fernet, req.network_id)
         if not net:
             raise HTTPException(400, "Network not found")
         target = net.id
-        token = sign_unsubscribe_token(secret, req.level, target)
+        token = regenerate_unsub_token(fernet, req.level, target) if req.regenerate else generate_unsub_token(fernet, req.level, target)
     elif req.level == "offer":
         off = get_offer(fernet, req.offer_id)
         if not off:
             raise HTTPException(400, "Offer not found")
         target = off.id
-        token = sign_unsubscribe_token(secret, req.level, target)
+        token = regenerate_unsub_token(fernet, req.level, target) if req.regenerate else generate_unsub_token(fernet, req.level, target)
     else:
         raise HTTPException(400, "Invalid level")
     url = f"{UNSUBSCRIBE_BASE_URL}/u?t={token}"
@@ -544,8 +579,8 @@ def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
     net = get_network(fernet, off.network_id)
     net_name = net.name if net else ""
 
-    secret = os.environ["SECRET_KEY"]
-    std_token = sign_unsubscribe_token(secret, "offer", off.id)
+    from ..store import generate_unsub_token
+    std_token = generate_unsub_token(fernet, "offer", off.id)
     std_url = f"{UNSUBSCRIBE_BASE_URL}/u?t={std_token}"
     auto_url = f"{UNSUBSCRIBE_BASE_URL}/u?t={std_token}&e=user@example.com"
 
@@ -636,12 +671,12 @@ function linkMsg(t,c){{const el=document.getElementById('link-msg');el.textConte
 fetch('/admin/offers/{off.id}/stats').then(r=>{{if(!r.ok)throw new Error(r.status);return r.json()}}).then(data=>{{document.getElementById('stat-total').textContent=data.total;const tb=document.getElementById('tld-body');if(data.tlds.length===0){{tb.innerHTML='<tr><td colspan="3" class="muted">No unsubscribers yet</td></tr>';return;}}tb.innerHTML=data.tlds.map(t=>'<tr><td>'+t.domain+'</td><td>'+t.count+'</td>'+'<td class="flex">'+'<a class="btn-sm" style="background:#43a047;color:white;text-decoration:none" href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=plain">Plain</a>'+'<a class="btn-sm" style="background:#e65100;color:white;text-decoration:none" href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=md5">MD5</a>'+'</td></tr>').join('');}}).catch(e=>{{document.getElementById('stat-total').textContent='Error';document.getElementById('tld-body').innerHTML='<tr><td colspan="3" class="muted">Failed to load stats</td></tr>'}});
 function copyInput(id){{const el=document.getElementById(id);navigator.clipboard.writeText(el.value).then(()=>unsubMsg('Copied!','ok'))}}
 async function refreshUnsubLinks(){{
-  const res=await fetch('/admin/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level:'offer',network_id:'{off.network_id}',offer_id:'{off.id}'}})}});
+  const res=await fetch('/admin/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level:'offer',network_id:'{off.network_id}',offer_id:'{off.id}',regenerate:true}})}});
   if(!res.ok){{const d=await res.json();unsubMsg(d.detail||'Error','err');return;}}
   const data=await res.json();
   document.getElementById('unsub-link-std').value=data.unsubscribe_url;
   document.getElementById('unsub-link-auto').value=data.unsubscribe_url+'&e=user@example.com';
-  unsubMsg('New links generated!','ok');
+  unsubMsg('New links regenerated!','ok');
 }}
 function unsubMsg(t,c){{const el=document.getElementById('unsub-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}}
 </script>"""

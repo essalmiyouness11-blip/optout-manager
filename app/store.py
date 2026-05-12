@@ -437,6 +437,48 @@ def get_all_statistics(fernet: Fernet) -> dict:
 
 # ── Feed token management ──
 
+def get_unsub_token(fernet: Fernet, level: str, target: str) -> str:
+    with _lock:
+        store = _load(fernet)
+        if level == "network":
+            net = (store.networks or {}).get(target)
+            return net.unsub_token if net else ""
+        elif level == "offer":
+            off = (store.offers or {}).get(target)
+            return off.unsub_token if off else ""
+    return ""
+
+
+def generate_unsub_token(fernet: Fernet, level: str, target: str) -> str:
+    existing = get_unsub_token(fernet, level, target)
+    if existing:
+        return existing
+    return regenerate_unsub_token(fernet, level, target)
+
+
+def regenerate_unsub_token(fernet: Fernet, level: str, target: str) -> str:
+    import secrets
+    from .crypto import sign_unsubscribe_token
+    secret = os.environ["SECRET_KEY"]
+    token = sign_unsubscribe_token(secret, level, target)
+    with _lock:
+        store = _load(fernet)
+        if level == "network":
+            net = (store.networks or {}).get(target)
+            if not net:
+                raise ValueError("Network not found")
+            net.unsub_token = token
+        elif level == "offer":
+            off = (store.offers or {}).get(target)
+            if not off:
+                raise ValueError("Offer not found")
+            off.unsub_token = token
+        else:
+            raise ValueError("Invalid level")
+        _save(fernet, store)
+    return token
+
+
 def get_feed_token(fernet: Fernet, level: str, target: str) -> str:
     with _lock:
         store = _load(fernet)
