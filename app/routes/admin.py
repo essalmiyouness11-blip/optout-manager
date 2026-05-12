@@ -544,6 +544,11 @@ def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
     net = get_network(fernet, off.network_id)
     net_name = net.name if net else ""
 
+    secret = os.environ["SECRET_KEY"]
+    std_token = sign_unsubscribe_token(secret, "offer", off.id)
+    std_url = f"{UNSUBSCRIBE_BASE_URL}/u?t={std_token}"
+    auto_url = f"{UNSUBSCRIBE_BASE_URL}/u?t={std_token}&e=user@example.com"
+
     content = f"""
 <p><a href="/admin/offers" style="color:#1976d2;text-decoration:none;font-size:0.85rem">&larr; Back to Offers</a></p>
 <div class="card">
@@ -568,6 +573,30 @@ def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
     <span class="muted" style="margin-left:0.5rem">This invalidates all existing links for this offer</span>
   </div>
   <div id="link-msg" style="margin-top:0.5rem" class="msg"></div>
+</div>
+
+<div class="card">
+  <h2>Unsubscribe Links</h2>
+  <p style="margin-bottom:0.75rem;font-size:0.85rem;color:#666">Send these links to users to let them opt out of this offer.</p>
+  <div style="margin-bottom:0.75rem">
+    <label style="font-weight:600;font-size:0.85rem;display:block;margin-bottom:0.25rem">Standard Link <span class="muted">(user enters email)</span></label>
+    <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+      <input type="text" id="unsub-link-std" readonly value="{std_url}" style="flex:1;min-width:200px;padding:0.4rem 0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#f9f9f9;color:#333">
+      <button class="btn-sm" onclick="copyInput('unsub-link-std')">Copy</button>
+    </div>
+  </div>
+  <div style="margin-bottom:0.5rem">
+    <label style="font-weight:600;font-size:0.85rem;display:block;margin-bottom:0.25rem">Auto-Unsubscribe Link <span class="muted">(no form, must include email)</span></label>
+    <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+      <input type="text" id="unsub-link-auto" readonly value="{auto_url}" style="flex:1;min-width:200px;padding:0.4rem 0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.8rem;background:#f9f9f9;color:#333">
+      <button class="btn-sm" onclick="copyInput('unsub-link-auto')">Copy</button>
+    </div>
+  </div>
+  <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid #eee">
+    <button class="btn-sm" style="background:#e65100" onclick="refreshUnsubLinks()">Refresh Links</button>
+    <span class="muted" style="margin-left:0.5rem">Generates new links (existing links remain valid)</span>
+  </div>
+  <div id="unsub-msg" style="margin-top:0.5rem" class="msg"></div>
 </div>
 
 <div class="card">
@@ -605,6 +634,16 @@ async function regenerateToken(){{
 }}
 function linkMsg(t,c){{const el=document.getElementById('link-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}}
 fetch('/admin/offers/{off.id}/stats').then(r=>{{if(!r.ok)throw new Error(r.status);return r.json()}}).then(data=>{{document.getElementById('stat-total').textContent=data.total;const tb=document.getElementById('tld-body');if(data.tlds.length===0){{tb.innerHTML='<tr><td colspan="3" class="muted">No unsubscribers yet</td></tr>';return;}}tb.innerHTML=data.tlds.map(t=>'<tr><td>'+t.domain+'</td><td>'+t.count+'</td>'+'<td class="flex">'+'<a class="btn-sm" style="background:#43a047;color:white;text-decoration:none" href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=plain">Plain</a>'+'<a class="btn-sm" style="background:#e65100;color:white;text-decoration:none" href="/admin/offers/{off.id}/export-tld/'+encodeURIComponent(t.domain)+'?format=md5">MD5</a>'+'</td></tr>').join('');}}).catch(e=>{{document.getElementById('stat-total').textContent='Error';document.getElementById('tld-body').innerHTML='<tr><td colspan="3" class="muted">Failed to load stats</td></tr>'}});
+function copyInput(id){{const el=document.getElementById(id);navigator.clipboard.writeText(el.value).then(()=>unsubMsg('Copied!','ok'))}}
+async function refreshUnsubLinks(){{
+  const res=await fetch('/admin/generate',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{level:'offer',network_id:'{off.network_id}',offer_id:'{off.id}'}})}});
+  if(!res.ok){{const d=await res.json();unsubMsg(d.detail||'Error','err');return;}}
+  const data=await res.json();
+  document.getElementById('unsub-link-std').value=data.unsubscribe_url;
+  document.getElementById('unsub-link-auto').value=data.unsubscribe_url+'&e=user@example.com';
+  unsubMsg('New links generated!','ok');
+}}
+function unsubMsg(t,c){{const el=document.getElementById('unsub-msg');el.textContent=t;el.className='msg '+c;el.style.display='block';setTimeout(()=>el.style.display='none',5000)}}
 </script>"""
 
     return _page(f"Offer: {off.name}", payload["sub"], payload["role"], "offers", content)
