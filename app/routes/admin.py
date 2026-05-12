@@ -158,13 +158,15 @@ def generate_page(payload: dict = Depends(get_current_user)):
   <div id="msg" class="msg"></div>
   <form id="form">
     <label>Network</label>
-    <select id="network" name="network_id">
+    <input type="text" id="net-search" placeholder="Type to search networks..." style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.9rem;margin-bottom:0.35rem">
+    <select id="network" name="network_id" size="5" style="width:100%;font-size:0.85rem">
       <option value="">-- Select Network --</option>
       {net_opts}
     </select>
     <div id="offer-field" class="hidden">
       <label>Offer</label>
-      <select id="offer" name="offer_id">
+      <input type="text" id="off-search" placeholder="Type to search offers..." style="width:100%;padding:0.5rem;border:1px solid #ccc;border-radius:4px;font-size:0.9rem;margin-bottom:0.35rem">
+      <select id="offer" name="offer_id" size="5" style="width:100%;font-size:0.85rem">
         <option value="">-- Select Offer --</option>
       </select>
     </div>
@@ -179,6 +181,16 @@ def generate_page(payload: dict = Depends(get_current_user)):
   </div>
 </div>
 <script>
+function filterSelect(inputId,selectId){{
+  const q=document.getElementById(inputId).value.toLowerCase();
+  const sel=document.getElementById(selectId);
+  for(let i=0;i<sel.options.length;i++){{
+    const t=sel.options[i].text.toLowerCase();
+    sel.options[i].style.display=t.includes(q)?'':'none';
+  }}
+}}
+document.getElementById('net-search').addEventListener('input',function(){{filterSelect('net-search','network')}});
+document.getElementById('off-search').addEventListener('input',function(){{filterSelect('off-search','offer')}});
 const offers = {offers_data};
 document.getElementById('network').addEventListener('change',function(){{
   const sel = document.getElementById('offer');
@@ -186,6 +198,8 @@ document.getElementById('network').addEventListener('change',function(){{
   const list = offers[this.value]||[];
   for(const o of list) sel.innerHTML += '<option value="'+o.id+'">'+o.name+' ('+o.id+')</option>';
   document.getElementById('offer-field').classList.toggle('hidden',!this.value);
+  document.getElementById('off-search').value='';
+  for(let i=0;i<sel.options.length;i++) sel.options[i].style.display='';
 }});
 document.getElementById('form').addEventListener('submit',async function(e){{
   e.preventDefault();
@@ -234,12 +248,13 @@ def generate_link(req: GenerateLinkRequest, _=Depends(get_current_user)):
 def networks_page(payload: dict = Depends(require_admin)):
     nets = list_networks(fernet)
     rows = "".join(
-        f'<tr><td>{n.id}</td><td>{n.name}</td><td>{fmt_date(n.created_at)}</td>'
+        f'<tr data-id="{n.id}"><td>{n.id}</td><td>{n.name}</td><td>{fmt_date(n.created_at)}</td>'
         f'<td class="flex">'
         f'<button class="btn-sm" onclick="editNet(\'{n.id}\',\'{n.name}\')">Edit</button>'
         f'<button class="btn-del" onclick="delNet(\'{n.id}\')">Delete</button></td></tr>'
         for n in nets
     )
+    total_count = len(nets)
     content = f"""
 <div class="card">
   <h2>Add Network</h2>
@@ -253,11 +268,43 @@ def networks_page(payload: dict = Depends(require_admin)):
   </form>
 </div>
 <div class="card">
-  <h2>All Networks</h2>
-  <div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Created</th><th></th></tr></thead>
-  <tbody>{rows or '<tr><td colspan="4" class="muted">No networks yet</td></tr>'}</tbody></table></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+    <h2 style="margin:0">All Networks</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center">
+      <input type="text" id="net-filter" placeholder="Search networks..." style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;min-width:160px">
+      <span id="net-count" class="muted" style="font-size:0.85rem">{total_count}</span>
+    </div>
+  </div>
+  <div class="table-wrap" style="margin-top:0.75rem"><table><thead><tr><th>ID</th><th>Name</th><th>Created</th><th></th></tr></thead>
+  <tbody id="net-tbody">{rows or '<tr><td colspan="4" class="muted">No networks yet</td></tr>'}</tbody></table></div>
+  <div id="net-pager" class="pager" style="display:none;margin-top:0.5rem;text-align:center"></div>
 </div>
 <script>
+function paginate(tbodyId,pagerId,pageSize){{
+  const tbody=document.getElementById(tbodyId);
+  const rows=Array.from(tbody.querySelectorAll('tr[data-id]'));
+  if(rows.length<=pageSize){{document.getElementById(pagerId).style.display='none';return;}}
+  let page=1;const total=Math.ceil(rows.length/pageSize);
+  function show(p){{
+    page=Math.max(1,Math.min(p,total));
+    rows.forEach((r,i)=>r.style.display=i>=(page-1)*pageSize&&i<page*pageSize?'':'none');
+    document.getElementById(pagerId).innerHTML='<span style="font-size:0.8rem;color:#666">Page '+page+'/'+total+' </span>'+
+      (page>1?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page-1)+')" style="margin:0 0.15rem">&larr; Prev</button>':'')+
+      (page<total?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page+1)+')" style="margin:0 0.15rem">Next &rarr;</button>':'');
+    document.getElementById(pagerId).style.display='';
+  }}
+  show(1);return show;
+}}
+function showPage(tbodyId,pagerId,pageSize,page){{window['_pg_'+tbodyId](page)}}
+document.getElementById('net-filter').addEventListener('input',function(){{
+  const q=this.value.toLowerCase();
+  const rows=document.getElementById('net-tbody').querySelectorAll('tr[data-id]');
+  let count=0;
+  rows.forEach(r=>{{const match=r.textContent.toLowerCase().includes(q);r.style.display=match?'':'none';if(match)count++;}});
+  document.getElementById('net-count').textContent=count+'/'+{total_count};
+  document.getElementById('net-pager').style.display='none';
+}});
+window['_pg_net-tbody']=paginate('net-tbody','net-pager',20);
 document.getElementById('form').addEventListener('submit',async function(e){{
   e.preventDefault();
   const id=document.getElementById('net-id').value.trim();
@@ -322,8 +369,9 @@ def offers_page(payload: dict = Depends(require_admin)):
     net_map = {n.id: n.name for n in nets}
     net_opts = "".join(f'<option value="{n.id}">{n.name}</option>' for n in nets)
     offs = list_offers(fernet)
+    total_offers = len(offs)
     rows = "".join(
-        f'<tr><td>{o.id}</td><td>{o.name}</td><td>{net_map.get(o.network_id, o.network_id)}</td><td>{fmt_date(o.created_at)}</td>'
+        f'<tr data-id="{o.id}"><td>{o.id}</td><td>{o.name}</td><td>{net_map.get(o.network_id, o.network_id)}</td><td>{fmt_date(o.created_at)}</td>'
         f'<td class="flex">'
         f'<a href="/admin/offers/{o.id}" class="btn-sm" style="background:#6a1b9a;color:white;text-decoration:none">Details</a>'
         f'<button class="btn-sm" onclick="editOff(\'{o.id}\',\'{o.name}\')">Edit</button>'
@@ -345,11 +393,43 @@ def offers_page(payload: dict = Depends(require_admin)):
   </form>
 </div>
 <div class="card">
-  <h2>All Offers</h2>
-  <div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Network</th><th>Created</th><th></th></tr></thead>
-  <tbody>{rows or '<tr><td colspan="5" class="muted">No offers yet</td></tr>'}</tbody></table></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+    <h2 style="margin:0">All Offers</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center">
+      <input type="text" id="off-filter" placeholder="Search offers..." style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;min-width:160px">
+      <span id="off-count" class="muted" style="font-size:0.85rem">{total_offers}</span>
+    </div>
+  </div>
+  <div class="table-wrap" style="margin-top:0.75rem"><table><thead><tr><th>ID</th><th>Name</th><th>Network</th><th>Created</th><th></th></tr></thead>
+  <tbody id="off-tbody">{rows or '<tr><td colspan="5" class="muted">No offers yet</td></tr>'}</tbody></table></div>
+  <div id="off-pager" class="pager" style="display:none;margin-top:0.5rem;text-align:center"></div>
 </div>
 <script>
+function paginate(tbodyId,pagerId,pageSize){{
+  const tbody=document.getElementById(tbodyId);
+  const rows=Array.from(tbody.querySelectorAll('tr[data-id]'));
+  if(rows.length<=pageSize){{document.getElementById(pagerId).style.display='none';return;}}
+  let page=1;const total=Math.ceil(rows.length/pageSize);
+  function show(p){{
+    page=Math.max(1,Math.min(p,total));
+    rows.forEach((r,i)=>r.style.display=i>=(page-1)*pageSize&&i<page*pageSize?'':'none');
+    document.getElementById(pagerId).innerHTML='<span style="font-size:0.8rem;color:#666">Page '+page+'/'+total+' </span>'+
+      (page>1?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page-1)+')">&larr; Prev</button>':'')+
+      (page<total?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page+1)+')">Next &rarr;</button>':'');
+    document.getElementById(pagerId).style.display='';
+  }}
+  show(1);return show;
+}}
+function showPage(tbodyId,pagerId,pageSize,page){{window['_pg_'+tbodyId](page)}}
+document.getElementById('off-filter').addEventListener('input',function(){{
+  const q=this.value.toLowerCase();
+  const rows=document.getElementById('off-tbody').querySelectorAll('tr[data-id]');
+  let count=0;
+  rows.forEach(r=>{{const match=r.textContent.toLowerCase().includes(q);r.style.display=match?'':'none';if(match)count++;}});
+  document.getElementById('off-count').textContent=count+'/'+{total_offers};
+  document.getElementById('off-pager').style.display='none';
+}});
+window['_pg_off-tbody']=paginate('off-tbody','off-pager',20);
 document.getElementById('form').addEventListener('submit',async function(e){{
   e.preventDefault();
   const id=document.getElementById('off-id').value.trim();
@@ -566,8 +646,9 @@ def dashboard_page(payload: dict = Depends(require_admin)):
 @router.get("/admin/users", response_class=HTMLResponse)
 def users_page(payload: dict = Depends(require_admin)):
     users = list_users(fernet)
+    total_users = len(users)
     rows = "".join(
-        f'<tr><td>{u.email}</td><td>{u.role}</td><td><code style="font-size:0.75rem">{u.api_key[:16]}...</code></td>'
+        f'<tr data-id="{u.email}"><td>{u.email}</td><td>{u.role}</td><td><code style="font-size:0.75rem">{u.api_key[:16]}...</code></td>'
         f'<td>{fmt_date(u.created_at)}</td>'
         f'<td><button class="btn-del" onclick="delUser(\'{u.email}\')">Delete</button></td></tr>'
         for u in users
@@ -587,11 +668,43 @@ def users_page(payload: dict = Depends(require_admin)):
   </div>
 </div>
 <div class="card">
-  <h2>All Users</h2>
-  <div class="table-wrap"><table><thead><tr><th>Email</th><th>Role</th><th>API Key</th><th>Created</th><th></th></tr></thead>
-  <tbody>{rows}</tbody></table></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+    <h2 style="margin:0">All Users</h2>
+    <div style="display:flex;gap:0.5rem;align-items:center">
+      <input type="text" id="user-filter" placeholder="Search users..." style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:0.85rem;min-width:160px">
+      <span id="user-count" class="muted" style="font-size:0.85rem">{total_users}</span>
+    </div>
+  </div>
+  <div class="table-wrap" style="margin-top:0.75rem"><table><thead><tr><th>Email</th><th>Role</th><th>API Key</th><th>Created</th><th></th></tr></thead>
+  <tbody id="user-tbody">{rows}</tbody></table></div>
+  <div id="user-pager" class="pager" style="display:none;margin-top:0.5rem;text-align:center"></div>
 </div>
 <script>
+function paginate(tbodyId,pagerId,pageSize){{
+  const tbody=document.getElementById(tbodyId);
+  const rows=Array.from(tbody.querySelectorAll('tr[data-id]'));
+  if(rows.length<=pageSize){{document.getElementById(pagerId).style.display='none';return;}}
+  let page=1;const total=Math.ceil(rows.length/pageSize);
+  function show(p){{
+    page=Math.max(1,Math.min(p,total));
+    rows.forEach((r,i)=>r.style.display=i>=(page-1)*pageSize&&i<page*pageSize?'':'none');
+    document.getElementById(pagerId).innerHTML='<span style="font-size:0.8rem;color:#666">Page '+page+'/'+total+' </span>'+
+      (page>1?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page-1)+')">&larr; Prev</button>':'')+
+      (page<total?'<button class="btn-sm" onclick="showPage(\''+tbodyId+'\','+pagerId+','+pageSize+','+(page+1)+')">Next &rarr;</button>':'');
+    document.getElementById(pagerId).style.display='';
+  }}
+  show(1);return show;
+}}
+function showPage(tbodyId,pagerId,pageSize,page){{window['_pg_'+tbodyId](page)}}
+document.getElementById('user-filter').addEventListener('input',function(){{
+  const q=this.value.toLowerCase();
+  const rows=document.getElementById('user-tbody').querySelectorAll('tr[data-id]');
+  let count=0;
+  rows.forEach(r=>{{const match=r.textContent.toLowerCase().includes(q);r.style.display=match?'':'none';if(match)count++;}});
+  document.getElementById('user-count').textContent=count+'/'+{total_users};
+  document.getElementById('user-pager').style.display='none';
+}});
+window['_pg_user-tbody']=paginate('user-tbody','user-pager',20);
 async function addUser(){{
   const email=document.getElementById('new-email').value;
   const pw=document.getElementById('new-pw').value;
