@@ -15,7 +15,28 @@ fernet = make_fernet(os.environ["SECRET_KEY"])
 @router.get("/auth/setup", response_class=HTMLResponse)
 def setup_form():
     if user_count(fernet) > 0:
-        return RedirectResponse(url="/auth/login")
+        return HTMLResponse("""<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Setup Already Done</title>
+<style>
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f5f5f5;display:flex;justify-content:center;align-items:center;min-height:100vh;margin:0;padding:1rem}
+  .card{background:white;padding:2rem;border-radius:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);text-align:center;max-width:400px;width:100%}
+  .icon{font-size:2rem;margin-bottom:0.75rem}
+  h1{color:#333;margin:0 0 0.5rem;font-size:1.25rem}
+  p{color:#666;margin:0 0 1.25rem;font-size:0.9rem;line-height:1.5}
+  a{color:#1976d2;text-decoration:none;font-weight:600}
+  a:hover{text-decoration:underline}
+</style>
+</head>
+<body><div class="card">
+  <div class="icon">&#10003;</div>
+  <h1>Setup Already Completed</h1>
+  <p>An admin account has already been created. If you lost your credentials, use the CLI to create a new admin.</p>
+  <p style="font-size:0.8rem;color:#999">CLI: <code style="font-size:0.75rem">python cli/manage.py user create email password --role admin</code></p>
+  <p style="margin-top:1rem"><a href="/auth/login">Go to Login &rarr;</a></p>
+</div></body>
+</html>""")
     return HTMLResponse("""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -67,12 +88,20 @@ def setup_form():
 
 
 @router.post("/auth/setup")
-def setup_submit(req: SetupRequest):
+def setup_submit(req: SetupRequest, response: Response):
     if user_count(fernet) > 0:
         raise HTTPException(400, "Admin already exists")
     password_hash = hash_password(req.password)
     user = create_user(fernet, req.email, password_hash, role="admin")
     token = sign_session_token(user.email, user.role)
+    response.set_cookie(
+        key="session",
+        value=token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=86400,
+    )
     return LoginResponse(token=token, email=user.email, role=user.role)
 
 
