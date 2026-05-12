@@ -42,6 +42,13 @@ def ago(ts: int) -> str:
     return f"{diff // 2592000}mo ago"
 
 
+def fmt_date(ts: int) -> str:
+    if not ts:
+        return "-"
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+
 # ── Layout ──
 
 _ADMIN_TABS = """
@@ -227,7 +234,7 @@ def generate_link(req: GenerateLinkRequest, _=Depends(get_current_user)):
 def networks_page(payload: dict = Depends(require_admin)):
     nets = list_networks(fernet)
     rows = "".join(
-        f'<tr><td>{n.id}</td><td>{n.name}</td><td>{n.created_at}</td>'
+        f'<tr><td>{n.id}</td><td>{n.name}</td><td>{fmt_date(n.created_at)}</td>'
         f'<td class="flex">'
         f'<button class="btn-sm" onclick="editNet(\'{n.id}\',\'{n.name}\')">Edit</button>'
         f'<button class="btn-del" onclick="delNet(\'{n.id}\')">Delete</button></td></tr>'
@@ -312,10 +319,11 @@ def get_network_offers(net_id: str, _=Depends(require_admin)):
 @router.get("/admin/offers", response_class=HTMLResponse)
 def offers_page(payload: dict = Depends(require_admin)):
     nets = list_networks(fernet)
+    net_map = {n.id: n.name for n in nets}
     net_opts = "".join(f'<option value="{n.id}">{n.name}</option>' for n in nets)
     offs = list_offers(fernet)
     rows = "".join(
-        f'<tr><td>{o.id}</td><td>{o.name}</td><td>{o.network_id}</td><td>{o.created_at}</td>'
+        f'<tr><td>{o.id}</td><td>{o.name}</td><td>{net_map.get(o.network_id, o.network_id)}</td><td>{fmt_date(o.created_at)}</td>'
         f'<td class="flex">'
         f'<a href="/admin/offers/{o.id}" class="btn-sm" style="background:#6a1b9a;color:white;text-decoration:none">Details</a>'
         f'<button class="btn-sm" onclick="editOff(\'{o.id}\',\'{o.name}\')">Edit</button>'
@@ -463,7 +471,7 @@ def offer_details_page(offer_id: str, payload: dict = Depends(require_admin)):
   <div class="table-wrap"><table>
     <tr><td><strong>ID</strong></td><td>{off.id}</td></tr>
     <tr><td><strong>Network</strong></td><td>{net_name} ({off.network_id})</td></tr>
-    <tr><td><strong>Created</strong></td><td>{off.created_at}</td></tr>
+    <tr><td><strong>Created</strong></td><td>{fmt_date(off.created_at)}</td></tr>
   </table></div>
 </div>
 
@@ -560,7 +568,7 @@ def users_page(payload: dict = Depends(require_admin)):
     users = list_users(fernet)
     rows = "".join(
         f'<tr><td>{u.email}</td><td>{u.role}</td><td><code style="font-size:0.75rem">{u.api_key[:16]}...</code></td>'
-        f'<td>{u.created_at}</td>'
+        f'<td>{fmt_date(u.created_at)}</td>'
         f'<td><button class="btn-del" onclick="delUser(\'{u.email}\')">Delete</button></td></tr>'
         for u in users
     )
