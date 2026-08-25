@@ -1,11 +1,11 @@
-unsubmepanel.remobtracks.com {
+unsubpanel.remobtracks.com {
     reverse_proxy app:8000
 }
 
-dlx.remobtracks.com {
+supp.remobtracks.com {
     reverse_proxy app:8000
 }
 
-optout.remobtracks.com {
+unsubscribe.remobtracks.com {
     reverse_proxy app:8000
 }
