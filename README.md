@@ -6,14 +6,14 @@ A stateless, self-hosted opt-out and suppression manager for affiliate marketers
 
 ```
 ┌─────────────────────────────────────────────────┐
-│                   Caddy / Nginx                  │
-│  (TLS termination, reverse proxy, auto-HTTPS)   │
+│                  Nginx + Certbot                 │
+│         (TLS termination, reverse proxy)         │
 └──────┬──────────────┬───────────────┬───────────┘
        │              │               │
        ▼              ▼               ▼
-  unsubmepanel.    dlx.          optout.
-  remobtracks.com  remobtracks.  remobtracks.
-                   com           com
+  unsubpanel.      supp.         unsubscribe.
+  remobtracks.com  remobtracks.  remobtracks.com
+                   com
        │              │               │
        │  Admin UI    │  Feed API     │  Unsubscribe
        │  Auth/Setup  │  CSV Export   │  Status Check
@@ -35,294 +35,400 @@ A stateless, self-hosted opt-out and suppression manager for affiliate marketers
 
 ### Subdomains
 
-| Subdomain              | Purpose           | Paths allowed             |
-|------------------------|-------------------|---------------------------|
-| `unsubmepanel.*`       | Admin panel       | `/`, `/admin`, `/auth`    |
-| `dlx.*`                | Suppression feeds | `/feed`, `/health`        |
-| `optout.*`             | Unsubscribe flow  | `/u`, `/check`, `/status` |
+| Subdomain                  | Purpose               | Allowed Paths                       |
+|----------------------------|-----------------------|-------------------------------------|
+| `unsubpanel.remobtracks.com` | Admin panel         | `/`, `/admin`, `/auth`, `/health`  |
+| `supp.remobtracks.com`       | Suppression feeds  | `/feed`, `/health`                 |
+| `unsubscribe.remobtracks.com`| Unsubscribe flow   | `/u`, `/check`, `/status`, `/health`|
+
+---
 
 ## Prerequisites
 
-- Python 3.10+ or Docker
-- A domain with three subdomain DNS A records pointing to your server IP
-- Ports 80 and 443 open in your firewall / security group
-
-## Configuration
-
-Copy `.env.example` to `.env` and fill in:
-
-```bash
-cp .env.example .env
-```
-
-| Variable                | Required | Description                                     |
-|-------------------------|----------|-------------------------------------------------|
-| `SECRET_KEY`            | Yes      | 64-character hex string. Used for Fernet AES encryption (persisted data), JWT session tokens, and unsubscribe tokens. **Keep this safe — if lost, all data is unrecoverable.** |
-| `ADMIN_API_KEY`         | No       | Legacy API key for admin operations (optional). |
-| `BASE_URL`              | Yes      | Base URL of the admin panel, e.g. `https://unsubmepanel.remobtracks.com`. |
-| `UNSUBSCRIBE_BASE_URL`  | Yes      | Public unsubscribe page URL, e.g. `https://optout.remobtracks.com`. Used in generated unsubscribe links. |
-| `DOWNLOAD_BASE_URL`     | Yes      | Public feed download URL, e.g. `https://dlx.remobtracks.com`. Used in generated suppression feed links. |
-| `SUPPRESSION_FILE`      | No       | Path to the encrypted data file. Default: `data/suppressions.enc`. Inside Docker, this is `/data/suppressions.enc`. |
-
-### Generate keys
-
-```bash
-python cli/manage.py keygen
-```
-
-This outputs a secure `SECRET_KEY` and `ADMIN_API_KEY`. Copy the `SECRET_KEY` into your `.env`.
+- An **EC2 instance** (Ubuntu 22.04/24.04/26.04) — `t3a.nano` or `t3a.micro` is sufficient
+- **Ports 80 and 443** open in your EC2 security group
+- **DNS A records** pointing your 3 subdomains to the EC2 public IP
+- **SSH key** for the EC2 instance
 
 ---
 
-## Quick Start (Local Development)
+## Step-by-Step Deployment Guide
+
+### Step 1: Launch an EC2 Instance
+
+1. Go to **AWS Console → EC2 → Launch Instance**
+2. Choose **Ubuntu 22.04 LTS** (or 24.04 / 26.04)
+3. Instance type: **t3a.micro** (free tier) or **t3a.small**
+4. Key pair: create or select your existing key (e.g. `ubuntiVirgin.pem`)
+5. Security Group — add these inbound rules:
+
+| Type | Port | Source     |
+|------|------|------------|
+| SSH  | 22   | Your IP    |
+| HTTP | 80   | 0.0.0.0/0 |
+| HTTPS| 443  | 0.0.0.0/0 |
+
+6. Storage: **8 GB** gp3 is enough
+7. Launch and note the **Public IPv4** (e.g. `35.153.176.232`)
+
+### Step 2: Set Up DNS
+
+Create 3 **A records** at your domain registrar, all pointing to the EC2 public IP:
+
+| Record                             | Type | Value         |
+|------------------------------------|------|---------------|
+| `unsubpanel.remobtracks.com`       | A    | `35.153.176.232` |
+| `supp.remobtracks.com`             | A    | `35.153.176.232` |
+| `unsubscribe.remobtracks.com`      | A    | `35.153.176.232` |
+
+Wait for DNS propagation (usually 1–5 minutes). Verify with:
 
 ```bash
-# 1. Install dependencies
-pip install -r requirements.txt
+dig +short unsubpanel.remobtracks.com
+# Should return: 35.153.176.232
+```
 
-# 2. Create .env (see Configuration above)
-cp .env.example .env
-# Edit .env with your secret key and URLs
+### Step 3: Clone the Repository
 
-# 3. Run the server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+SSH into your EC2 instance:
 
-# 4. Open http://localhost:8000 — you'll be redirected to /auth/setup
-#    to create the initial admin user.
+```bash
+ssh -i ubuntiVirgin.pem ubuntu@ec2-35-153-176-232.compute-1.amazonaws.com
+```
+
+Clone the app:
+
+```bash
+sudo git clone https://github.com/essalmiyouness11-blip/optout-manager.git /opt/suppression-manager
+sudo chown -R ubuntu:ubuntu /opt/suppression-manager
+```
+
+### Step 4: Run the Automated Deploy Script
+
+The setup script handles **everything** automatically — system dependencies, Python venv, nginx, systemd, and firewall:
+
+```bash
+cd /opt/suppression-manager
+sudo bash deploy/setup.sh
+```
+
+This script will:
+
+1. **Install system deps** — python3, nginx, certbot, git, rustc (for pydantic-core on Python 3.14+)
+2. **Create Python venv** and install all pip dependencies
+3. **Generate `.env`** with random `SECRET_KEY` and `ADMIN_API_KEY` (only if `.env` doesn't exist)
+4. **Create systemd service** (`suppression-manager.service`) running uvicorn with 2 workers
+5. **Configure nginx** as reverse proxy for all 3 subdomains
+6. **Open firewall** ports 80, 443, SSH
+7. **Verify** the app is responding
+
+When done, you'll see:
+
+```
+══════════════════════════════════════════════════════
+  Deployment complete!
+══════════════════════════════════════════════════════
+
+  App running at:  http://127.0.0.1:8000
+  EC2 Public IP:   35.153.176.232
+
+  Next steps:
+  3. Once DNS propagates, run certbot for SSL:
+     certbot --nginx -d unsubpanel.remobtracks.com -d supp.remobtracks.com -d unsubscribe.remobtracks.com
+
+  4. Complete initial admin setup at:
+     https://unsubpanel.remobtracks.com/auth/setup
+```
+
+### Step 5: Enable HTTPS with Certbot
+
+Once DNS A records are live and resolving to your EC2 IP, run certbot to get free SSL certificates:
+
+```bash
+sudo certbot --nginx \
+  -d unsubpanel.remobtracks.com \
+  -d supp.remobtracks.com \
+  -d unsubscribe.remobtracks.com \
+  --non-interactive \
+  --agree-tos \
+  --email your@email.com \
+  --redirect
+```
+
+Certbot will:
+- Obtain SSL certificates from Let's Encrypt
+- Auto-configure nginx with HTTPS + HTTP→HTTPS redirects
+- Set up automatic certificate renewal
+
+### Step 6: Create Your Admin Account
+
+Open **https://unsubpanel.remobtracks.com/auth/setup** in your browser.
+
+Create your admin username and password. You'll be redirected to the login page after setup.
+
+**Done!** Your app is live and ready.
+
+---
+
+## Configuration Reference
+
+### Environment Variables
+
+The `.env` file at `/opt/suppression-manager/.env`:
+
+| Variable                | Required | Description                                                                 |
+|-------------------------|----------|-----------------------------------------------------------------------------|
+| `SECRET_KEY`            | Yes      | 64-char hex string. Encrypts all data. **Lose this = lose all data.**      |
+| `ADMIN_API_KEY`         | No       | Legacy API key for admin operations.                                       |
+| `BASE_URL`              | Yes      | Admin panel URL, e.g. `https://unsubpanel.remobtracks.com`                 |
+| `UNSUBSCRIBE_BASE_URL`  | Yes      | Unsubscribe page URL, e.g. `https://unsubscribe.remobtracks.com`           |
+| `DOWNLOAD_BASE_URL`     | Yes      | Feed download URL, e.g. `https://supp.remobtracks.com`                     |
+| `SUPPRESSION_FILE`      | No       | Path to encrypted data file. Default: `data/suppressions.enc`              |
+| `SECURE_COOKIE`         | No       | Override cookie security. Auto-detected from `BASE_URL` (https = true).    |
+
+---
+
+## Backup & Restore
+
+### What to Back Up
+
+All data lives in two files:
+
+| File                        | Purpose                          |
+|-----------------------------|----------------------------------|
+| `/opt/suppression-manager/.env`               | Secret keys + config     |
+| `/opt/suppression-manager/data/suppressions.enc` | All encrypted data      |
+
+### Manual Backup
+
+```bash
+# From your local machine:
+scp -i ubuntiVirgin.pem ubuntu@EC2_IP:/opt/suppression-manager/.env ./
+scp -i ubuntiVirgin.pem ubuntu@EC2_IP:/opt/suppression-manager/data/suppressions.enc ./
+```
+
+> **IMPORTANT**: The `SECRET_KEY` in `.env` is required to decrypt `suppressions.enc`. Back up both files together and keep them safe.
+
+### Automated Restore
+
+The project includes `deploy/restore.sh` for automated data restoration:
+
+#### Restore to the same EC2
+
+```bash
+# SSH into the EC2, then:
+sudo bash deploy/restore.sh \
+  --local \
+  --env /path/to/backed-up/.env \
+  --data /path/to/backed-up/suppressions.enc
+```
+
+#### Restore to a new EC2 (from your machine)
+
+```bash
+# Upload backup + restart service
+bash deploy/restore.sh \
+  --remote ubuntu@NEW_EC2_IP \
+  --key /path/to/your-key.pem \
+  --env backups/.env \
+  --data backups/suppressions.enc
+```
+
+#### Full deploy + restore on a fresh EC2
+
+This installs everything from scratch AND restores your data:
+
+```bash
+# First, clone the repo on the new EC2:
+ssh -i key.pem ubuntu@NEW_EC2_IP
+sudo git clone https://github.com/essalmiyouness11-blip/optout-manager.git /opt/suppression-manager
+sudo chown -R ubuntu:ubuntu /opt/suppression-manager
+exit
+
+# Then restore from your machine:
+bash deploy/restore.sh \
+  --remote ubuntu@NEW_EC2_IP \
+  --key /path/to/your-key.pem \
+  --env backups/.env \
+  --data backups/suppressions.enc \
+  --deploy
+```
+
+### Using the CLI for Backup/Restore
+
+You can also use the CLI for a clean JSON export/import:
+
+```bash
+# Export decrypted JSON (run on the EC2)
+cd /opt/suppression-manager
+source venv/bin/activate
+python cli/manage.py export > backup.json
+
+# Import from JSON
+python cli/manage.py import-cmd backup.json
 ```
 
 ---
 
-## EC2 Deployment
-
-### Option A: Caddy (recommended — auto-HTTPS, zero config)
-
-#### 1. Launch an EC2 instance
-
-- **AMI**: Ubuntu 22.04 LTS or Amazon Linux 2023
-- **Instance type**: `t3a.nano` or `t3a.micro` (free tier eligible) — sufficient for thousands of suppressions
-- **Storage**: 8 GB gp3 is plenty
-- **Security Group**: open ports **22** (SSH), **80** (HTTP), **443** (HTTPS)
-
-#### 2. Install Docker and Compose
+## Updating the App
 
 ```bash
-# Ubuntu
-sudo apt update && sudo apt install -y docker.io docker-compose-v2
-sudo systemctl enable --now docker
-sudo usermod -aG docker ubuntu
-# Log out and back in for group changes to take effect
+ssh -i key.pem ubuntu@EC2_IP
+cd /opt/suppression-manager
+sudo bash deploy/setup.sh
 ```
 
-#### 3. Clone the repository
-
-```bash
-git clone https://github.com/YOUR_USER/optout-manager.git
-cd optout-manager
-```
-
-#### 4. Configure environment
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-Fill in your values:
-
-```ini
-SECRET_KEY=<generated 64-hex string>
-BASE_URL=https://unsubmepanel.YOURDOMAIN.com
-UNSUBSCRIBE_BASE_URL=https://optout.YOURDOMAIN.com
-DOWNLOAD_BASE_URL=https://dlx.YOURDOMAIN.com
-```
-
-> **Important**: `SUPPRESSION_FILE` is already set to `/data/suppressions.enc` in the Dockerfile. Do not change it unless you know what you're doing.
-
-#### 5. Update Caddyfile
-
-Edit `Caddyfile` to use your domain:
-
-```
-unsubmepanel.YOURDOMAIN.com {
-    reverse_proxy app:8000
-}
-
-dlx.YOURDOMAIN.com {
-    reverse_proxy app:8000
-}
-
-optout.YOURDOMAIN.com {
-    reverse_proxy app:8000
-}
-```
-
-#### 6. Set up DNS
-
-Create three **A records** in your DNS provider, all pointing to your EC2 instance's public IP:
-
-| Record                  | Type | Value      |
-|-------------------------|------|------------|
-| `unsubmepanel.YOURDOMAIN.com` | A    | `<EC2_IP>` |
-| `dlx.YOURDOMAIN.com`          | A    | `<EC2_IP>` |
-| `optout.YOURDOMAIN.com`       | A    | `<EC2_IP>` |
-
-DNS propagation can take a few minutes to hours.
-
-#### 7. Launch
-
-```bash
-docker compose -f docker-compose.caddy.yml up -d --build
-```
-
-Caddy automatically provisions and renews TLS certificates for all three subdomains via Let's Encrypt.
-
-#### 8. First-time setup
-
-Open `https://unsubmepanel.YOURDOMAIN.com` in your browser. You'll be redirected to `/auth/setup` to create the initial admin account.
-
----
-
-### Option B: Nginx + Certbot (alternative)
-
-This project includes `docker-compose.yml` and `nginx.conf` for a Nginx-based setup with manual Let's Encrypt certificates.
-
-**Changes required before deploying:**
-
-1. Set your domain names in `nginx.conf` (replace `server_name _;` with your actual subdomains, or add separate `server` blocks)
-2. Place your SSL certificate and key at `ssl/fullchain.pem` and `ssl/privkey.pem` (or modify paths)
-3. Launch: `docker compose up -d --build`
-
-For a fresh certificate:
-```bash
-docker compose run --rm certbot certonly --webroot -w /var/www/certbot \
-  -d unsubmepanel.YOURDOMAIN.com \
-  -d dlx.YOURDOMAIN.com \
-  -d optout.YOURDOMAIN.com
-```
-
-Then copy the certificates to `ssl/` and launch the stack.
-
----
-
-## Updating
-
-```bash
-git pull
-docker compose -f docker-compose.caddy.yml up -d --build
-```
-
-The encrypted data file persists in the `suppression_data` Docker volume — it survives container rebuilds.
+The deploy script is idempotent — it pulls the latest code, updates dependencies, and restarts the service. Your `.env` and `data/suppressions.enc` are never overwritten.
 
 ---
 
 ## Usage Guide
 
-### 1. Admin Panel
+### Admin Panel
 
-Access the admin panel at `https://unsubmepanel.YOURDOMAIN.com`.
+Access at **https://unsubpanel.remobtracks.com**
 
-**Tabs:**
+| Tab             | Purpose                                                          |
+|-----------------|------------------------------------------------------------------|
+| **Generate**    | Create unsubscribe links (global, network, or offer level)       |
+| **Networks**    | Manage affiliate networks                                        |
+| **Offers**      | Manage offers (linked to networks)                               |
+| **Unsubscribers** | Browse unsubscribers per offer with counts, export, TLD stats  |
+| **Dashboard**   | Summary stats: global/network/offer counts, feed links           |
+| **Users**       | Manage admin users (create, delete)                              |
 
-| Tab            | Purpose                                                   |
-|----------------|-----------------------------------------------------------|
-| **Generate**   | Create unsubscribe links for global, network, or offer level |
-| **Networks**   | CRUD for affiliate networks                               |
-| **Offers**     | CRUD for offers (belong to a network)                     |
-| **Unsubscribers** | Browse unsubscribers per offer with counts, export, inline expansion |
-| **Dashboard**  | Summary stats: global/network/offer unsubscriber counts, suppression feed links |
-| **Users**      | Manage admin users (create, delete)                       |
-
-### 2. Generating Unsubscribe Links
+### Generating Unsubscribe Links
 
 Go to **Generate** tab and select a level:
 
-- **Global** — the unsubscribe link opts the user out of everything
-- **Network** — opts the user out of a specific affiliate network (all its offers)
-- **Offer** — opts the user out of a specific offer only
+- **Global** — opts user out of everything
+- **Network** — opts user out of all offers in a network
+- **Offer** — opts user out of a specific offer
 
-You'll get two types of links:
+You get two link types:
 
-- **Standard link** (`?t=TOKEN`) — opens an unsubscribe form where the user enters their email
-- **Auto-unsubscribe link** (`?t=TOKEN&e=EMAIL`) — immediately unsubscribes the user without showing a form
+- **Standard** (`?t=TOKEN`) — shows a themed email form (50 random designs)
+- **Auto-unsubscribe** (`?t=TOKEN&e=EMAIL`) — immediately unsubscribes, no form shown
 
-### 3. Suppression Feeds
+### Suppression Feeds
 
-Each offer and network has a **permanent suppression feed URL** (shown on the offer/network details page, and in the Dashboard). These URLs:
-
-- **Never change** — the same token is reused unless explicitly regenerated
-- **Auto-update** — always return the latest unsubscriber list
-- **Three formats** — JSON, Plain CSV (emails), MD5 CSV (MD5 hashes)
-
-**Supported query parameters on feed URLs:**
-
-| Param   | Values              | Description                                     |
-|---------|---------------------|-------------------------------------------------|
-| `since` | Unix timestamp      | Only return unsubscribers added after this time  |
-| `token` | Feed token          | Authentication token (included in URL)           |
-
-#### Feed endpoint formats
+Each offer/network has a **permanent feed URL** (shown on the details page and dashboard):
 
 ```
-JSON:   GET /feed/unsubscribers/{target}?token={token}&level=offer
-CSV:    GET /feed/unsubscribers/{target}/csv?token={token}&level=offer&format=plain
-MD5:    GET /feed/unsubscribers/{target}/csv?token={token}&level=offer&format=md5
+# JSON feed
+GET https://supp.remobtracks.com/feed/unsubscribers/{target}?token={token}&level=offer
+
+# CSV (plain emails)
+GET https://supp.remobtracks.com/feed/unsubscribers/{target}/csv?token={token}&level=offer&format=plain
+
+# CSV (MD5 hashes)
+GET https://supp.remobtracks.com/feed/unsubscribers/{target}/csv?token={token}&level=offer&format=md5
 ```
 
-These endpoints are served on the `dlx.` subdomain.
+Feed tokens are **persistent** — the same URL works forever unless explicitly regenerated.
 
-### 4. What the User Sees
+**Query parameters:**
+
+| Param   | Description                                     |
+|---------|-------------------------------------------------|
+| `since` | Unix timestamp — only return entries after this  |
+| `token` | Authentication token (included in URL)           |
+
+### Checking Suppression Status
+
+```bash
+curl "https://unsubscribe.remobtracks.com/check" \
+  -H "Content-Type: application/json" \
+  -d '{"h":"sha256_of_email","network":"network_id","offer":"offer_id"}'
+```
+
+### What Users See
 
 When a user clicks an unsubscribe link:
 
-1. They land on `https://optout.YOURDOMAIN.com/u?t=TOKEN` (or with `&e=EMAIL` for auto-unsubscribe)
-2. No offer/network information is shown — just a clean email input form
-3. After submitting, they're redirected to a success page with a confirmation message
-4. The email is stored as lowercase SHA256 + MD5 hash in the encrypted data file
+1. They land on `https://unsubscribe.remobtracks.com/u?t=TOKEN`
+2. A themed form appears (randomly selected from 50 designs)
+3. No offer or network information is revealed
+4. After submitting → success page with confirmation
+5. Email is stored as SHA256 + MD5 hashes in the encrypted file
 
-### 5. Checking Suppression Status
+---
 
-```http
-GET /status?h=<sha256_of_email>
-```
+## API Reference
 
-Returns whether an email is suppressed at global, network, or offer level. Useful for ESP integration.
+### Public (unsubscribe subdomain)
 
-**Response:**
-```json
-{
-  "email_hash": "sha256hash",
-  "suppressed": true,
-  "global_suppressed": false,
-  "network_suppressions": [],
-  "offer_suppressions": ["offer_123"]
-}
-```
+| Method | Path                  | Description                                |
+|--------|-----------------------|--------------------------------------------|
+| GET    | `/u`                  | Unsubscribe form (requires `?t=`)         |
+| POST   | `/u`                  | Submit email for unsubscription            |
+| GET    | `/u/success`          | Success page after unsubscribing           |
+| GET    | `/status`             | Check suppression status (`?h=`)           |
+
+### Feed (supp subdomain)
+
+| Method | Path                                       | Description                       |
+|--------|--------------------------------------------|-----------------------------------|
+| GET    | `/feed/unsubscribers/{target}`             | JSON feed (requires `?token=`)   |
+| GET    | `/feed/unsubscribers/{target}/csv`         | CSV feed (requires `?token=`)    |
+
+### Admin (unsubpanel subdomain, requires auth)
+
+| Method | Path                                               | Description                    |
+|--------|----------------------------------------------------|--------------------------------|
+| GET    | `/admin/generate`                                  | Link generator page            |
+| POST   | `/admin/generate`                                  | Generate unsubscribe links     |
+| GET    | `/admin/networks`                                  | Networks list                  |
+| GET    | `/admin/offers`                                    | Offers list                    |
+| GET    | `/admin/offers/{id}`                               | Offer details                  |
+| GET    | `/admin/offers/{id}/stats`                         | Offer stats (TLD breakdown)    |
+| GET    | `/admin/offers/{id}/unsubscribers/csv`             | Download offer unsubscribers   |
+| GET    | `/admin/offers/{id}/export-tld/{domain}`           | Download per-TLD unsubscribers |
+| GET    | `/admin/unsubscribers`                             | Unsubscribers overview         |
+| GET    | `/admin/unsubscribers/data`                        | Unsubscribers JSON data        |
+| GET    | `/admin/unsubscribers/data/offer/{id}`             | Per-offer unsubscriber data    |
+| GET    | `/admin/unsubscribers/export`                      | Download filtered CSV          |
+| GET    | `/admin/dashboard`                                 | Dashboard page                 |
+| GET    | `/admin/users`                                     | Users management               |
+| POST   | `/admin/users`                                     | Create user                    |
+| DELETE | `/admin/users/{email}`                             | Delete user                    |
+| POST   | `/admin/feed/generate`                             | Generate / reuse feed token    |
+| POST   | `/admin/feed/regenerate`                           | Rotate feed token              |
+
+### Auth
+
+| Method | Path           | Description                  |
+|--------|----------------|------------------------------|
+| GET    | `/auth/setup`  | Initial admin setup page     |
+| POST   | `/auth/setup`  | Create first admin account   |
+| GET    | `/auth/login`  | Login page                   |
+| POST   | `/auth/login`  | Login                        |
+| POST   | `/auth/logout` | Logout                       |
+
+### Health
+
+| Method | Path      | Description                   |
+|--------|-----------|-------------------------------|
+| GET    | `/health` | Returns `{"status": "ok"}`    |
 
 ---
 
 ## CLI Tools
 
-The project includes a CLI for managing data and users:
-
 ```bash
+cd /opt/suppression-manager
+source venv/bin/activate
+
 # Generate SECRET_KEY and ADMIN_API_KEY
 python cli/manage.py keygen
 
-# List all users
+# List / create / delete users
 python cli/manage.py user list
-
-# Create a user
 python cli/manage.py user create admin@example.com mypassword --role admin
-
-# Delete a user
 python cli/manage.py user delete admin@example.com
 
-# Reset an API key
-python cli/manage.py user reset-api-key admin@example.com
-
-# Export all suppressions as JSON (decrypted)
-python cli/manage.py export
+# Export all suppressions (decrypted JSON)
+python cli/manage.py export > backup.json
 
 # Import suppressions from JSON
 python cli/manage.py import-cmd backup.json
@@ -331,135 +437,123 @@ python cli/manage.py import-cmd backup.json
 python cli/manage.py stats
 ```
 
-**Note**: CLI commands read `SUPPRESSION_FILE` and `SECRET_KEY` from the environment. You can override the file path with `--file`.
-
----
-
-## Data Storage
-
-All data is stored in a single encrypted JSON file (default: `data/suppressions.enc`). The file is:
-
-- **Encrypted** with Fernet (AES-128-CBC + HMAC-SHA256) using your `SECRET_KEY`
-- **Thread-safe** — all reads/writes are protected by a lock
-- **Cached in memory** — the file is re-read only when modified
-
-### Backup
-
-To safely back up your data:
-
-```bash
-# Export decrypted JSON
-python cli/manage.py export > backup.json
-
-# To restore
-python cli/manage.py import-cmd backup.json
-```
-
----
-
-## API Endpoints
-
-### Public (optout subdomain)
-
-| Method | Path                  | Description                          |
-|--------|-----------------------|--------------------------------------|
-| GET    | `/u`                  | Show unsubscribe form (requires `?t=`) |
-| POST   | `/u`                  | Submit email via unsubscribe form    |
-| GET    | `/u/success`          | Success page after unsubscribing     |
-| GET    | `/status`             | Check suppression status (`?h=`)     |
-
-### Feed (dlx subdomain)
-
-| Method | Path                                       | Description                     |
-|--------|--------------------------------------------|---------------------------------|
-| GET    | `/feed/unsubscribers/{target}`             | JSON feed (requires `?token=`)  |
-| GET    | `/feed/unsubscribers/{target}/csv`         | CSV feed (requires `?token=`)   |
-
-### Admin (unsubmepanel subdomain, requires auth)
-
-| Method | Path                                             | Description                  |
-|--------|--------------------------------------------------|------------------------------|
-| GET    | `/admin/generate`                                | Link generator page          |
-| POST   | `/admin/generate`                                | Generate unsubscribe links   |
-| GET    | `/admin/networks`                                | Networks list page           |
-| GET    | `/admin/offers`                                  | Offers list page             |
-| GET    | `/admin/offers/{id}`                             | Offer details page           |
-| GET    | `/admin/offers/{id}/stats`                       | Offer stats (TLD breakdown)  |
-| GET    | `/admin/offers/{id}/unsubscribers/csv`           | Download offer unsubscribers |
-| GET    | `/admin/offers/{id}/export-tld/{domain}`         | Download per-TLD unsubscribers|
-| GET    | `/admin/unsubscribers`                           | Unsubscribers overview page  |
-| GET    | `/admin/unsubscribers/data`                      | Unsubscribers JSON data      |
-| GET    | `/admin/unsubscribers/data/offer/{id}`           | Per-offer unsubscriber data  |
-| GET    | `/admin/unsubscribers/export`                    | Download filtered CSV        |
-| GET    | `/admin/dashboard`                               | Dashboard page               |
-| GET    | `/admin/users`                                   | Users management page        |
-| POST   | `/admin/users`                                   | Create user                  |
-| DELETE | `/admin/users/{email}`                           | Delete user                  |
-| POST   | `/admin/feed/generate`                           | Generate (or reuse) feed token|
-| POST   | `/admin/feed/regenerate`                         | Rotate feed token            |
-
-### Auth
-
-| Method | Path          | Description                |
-|--------|---------------|----------------------------|
-| GET    | `/auth/setup` | Initial admin setup page   |
-| POST   | `/auth/setup` | Create first admin account |
-| GET    | `/auth/login` | Login page                 |
-| POST   | `/auth/login` | Login                      |
-| POST   | `/auth/logout`| Logout                     |
-
-### Health
-
-| Method | Path      | Description          |
-|--------|-----------|----------------------|
-| GET    | `/health` | Returns `{"status":"ok"}` |
-
 ---
 
 ## Security
 
-- **Passwords**: hashed with bcrypt before storage
-- **Session tokens**: JWT (HS256), 24-hour expiry, stored in HTTP-only cookies
-- **Unsubscribe tokens**: JWT (HS256), no expiry (permanent links), contain level + target + optional email hash
-- **Feed tokens**: random hex string, stored in encrypted file, permanent (reused) unless explicitly regenerated
+- **Passwords**: bcrypt hashed before storage
+- **Session tokens**: JWT (HS256), 24-hour expiry, HTTP-only cookies
+- **Unsubscribe tokens**: JWT (HS256), permanent, contain level + target + optional email hash
+- **Feed tokens**: random hex, stored encrypted, permanent (reused unless regenerated)
 - **Data at rest**: AES-128-CBC + HMAC-SHA256 via Fernet
-- **Rate limiting**: 20 requests per 60 seconds on `/u` and `/check` endpoints
+- **Rate limiting**: 20 requests/60s on `/u` and `/check`
 - **Security headers**: `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`
-- **Host routing**: each subdomain only serves its allowed paths; unknown paths return 403
+- **Host routing**: each subdomain only serves its allowed paths
+
+---
+
+## Useful Commands
+
+```bash
+# Service management
+sudo systemctl status suppression-manager
+sudo systemctl restart suppression-manager
+sudo systemctl stop suppression-manager
+sudo journalctl -u suppression-manager -f          # live logs
+sudo journalctl -u suppression-manager -n 100       # last 100 lines
+
+# Nginx
+sudo nginx -t                                       # test config
+sudo systemctl reload nginx                         # reload after changes
+
+# SSL / Certbot
+sudo certbot certificates                           # view certificates
+sudo certbot renew --dry-run                        # test renewal
+sudo certbot renew                                  # force renewal
+
+# Full redeploy (idempotent — safe to re-run)
+sudo bash /opt/suppression-manager/deploy/setup.sh
+```
 
 ---
 
 ## Troubleshooting
 
-### "Unsubscriber Statistics" showing "Loading..."
+### App not responding on domain
 
-The offer details page fetches `/admin/offers/{id}/stats` via JS. Make sure the route is registered before the generic `/admin/offers/{id}` route. If you see "Failed to load stats", check browser dev tools (F12 → Network tab) for the exact error.
+```bash
+# Check service is running
+sudo systemctl status suppression-manager
 
-### Caddy 404 / Host routing blocks requests
+# Test locally
+curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/
 
-Caddy serves all three subdomains and proxies everything to the app. The **app's middleware** enforces host routing. If you get a 403 `"Not available on this subdomain"`, you're accessing a path from the wrong subdomain.
+# Test via nginx
+curl -s -o /dev/null -w '%{http_code}' -H 'Host: unsubpanel.remobtracks.com' http://127.0.0.1/
 
-Check the middleware rules in `app/middleware.py`:
+# Check nginx config
+sudo nginx -t
+```
 
-- `unsubmepanel.*` → `/`, `/admin`, `/auth`, `/health`
-- `dlx.*` → `/feed`, `/health`
-- `optout.*` → `/u`, `/check`, `/status`, `/health`
+### SSL / certificate errors
 
-### Data file corruption
-
-The encrypted data file is read on every request. If it gets corrupted:
-1. Restore from backup: `python cli/manage.py import-cmd backup.json`
-2. If no backup exists, delete the file and start fresh (you'll lose all data)
+- Ensure DNS A records resolve to your EC2 IP: `dig +short unsubpanel.remobtracks.com`
+- Ensure ports 80 and 443 are open in the EC2 security group
+- Re-run certbot: `sudo certbot --nginx -d unsubpanel.remobtracks.com -d supp.remobtracks.com -d unsubscribe.remobtracks.com`
 
 ### "Invalid or expired link" on unsubscribe
 
-The unsubscribe token is JWT-based and may be invalid if:
 - The token was generated with a different `SECRET_KEY`
 - The URL was mangled (check for `&` being encoded as `&amp;` in HTML)
-- The token was truncated by email client line-wrapping
 
-### Port 80/443 not accessible on EC2
+### Data file corruption
 
-- Check the EC2 security group: must allow inbound TCP on 80 and 443
-- Check the instance's firewall: `sudo ufw status` (if using UFW)
-- Caddy binds directly to 80/443 on the host (not inside Docker networking)
+If the encrypted file gets corrupted:
+1. Restore from backup: `python cli/manage.py import-cmd backup.json`
+2. If no backup exists, delete `data/suppressions.enc` and start fresh (all data lost)
+
+### 403 "Not available on this subdomain"
+
+You're accessing a path from the wrong subdomain. Check the routing rules:
+
+| Subdomain    | Allowed paths                              |
+|--------------|---------------------------------------------|
+| `unsubpanel` | `/`, `/admin`, `/auth`, `/health`          |
+| `supp`       | `/feed`, `/health`                         |
+| `unsubscribe`| `/u`, `/check`, `/status`, `/health`       |
+
+---
+
+## File Structure
+
+```
+suppression-manager/
+├── app/
+│   ├── main.py              # FastAPI app assembly
+│   ├── auth.py              # bcrypt + JWT session auth
+│   ├── crypto.py            # JWT tokens, SHA256/MD5 hashing, Fernet
+│   ├── models.py            # Pydantic models
+│   ├── store.py             # Thread-safe encrypted JSON CRUD
+│   ├── templates.py         # 50 random unsubscribe page themes
+│   ├── middleware.py         # Rate limiting + host routing
+│   └── routes/
+│       ├── admin.py         # Admin panel pages & API
+│       ├── auth.py          # Setup / login / logout
+│       ├── feed.py          # Suppression feed API
+│       ├── status.py        # Suppression status check
+│       └── unsubscribe.py   # Unsubscribe form + submission
+├── cli/
+│   └── manage.py            # CLI tools (keygen, users, export/import)
+├── deploy/
+│   ├── setup.sh             # Automated EC2 deployment script
+│   ├── restore.sh           # Automated backup restore script
+│   ├── suppression-manager.service  # Systemd unit file
+│   └── nginx.conf           # Nginx reverse proxy config
+├── data/                    # Encrypted data (gitignored)
+├── backups/                 # Local backups (gitignored)
+├── .env.example             # Environment template
+├── requirements.txt         # Python dependencies
+├── Caddyfile                # Caddy config (alternative)
+├── Dockerfile               # Docker build (alternative)
+└── README.md                # This file
+```

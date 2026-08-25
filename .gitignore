@@ -1,8 +1,9 @@
-__pycache__/
-*.pyc
-.env
-data/
-ssl/
+backups/
 certbot/
+data/
 *.egg-info/
+.env
+*.pyc
+__pycache__/
+ssl/
 .venv/

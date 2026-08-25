@@ -9,9 +9,9 @@ from starlette.middleware.base import BaseHTTPMiddleware
 # Host routing rules: (host_prefix, allowed_path_prefixes) — only requests to these
 # subdomains are restricted to their allowed paths. Unknown hosts = unrestricted.
 HOST_ROUTES = [
-    ("dlx.", ["/feed", "/health"]),
-    ("optout.", ["/u", "/check", "/status", "/health"]),
-    ("unsubmepanel.", ["/", "/admin", "/auth", "/health"]),
+    ("supp.", ["/feed", "/health"]),
+    ("unsubscribe.", ["/u", "/check", "/status", "/health"]),
+    ("unsubpanel.", ["/", "/admin", "/auth", "/health"]),
 ]
 
 
