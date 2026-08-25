@@ -11,9 +11,8 @@ A stateless, self-hosted opt-out and suppression manager for affiliate marketers
 └──────┬──────────────┬───────────────┬───────────┘
        │              │               │
        ▼              ▼               ▼
-  unsubpanel.      supp.         unsubscribe.
-  remobtracks.com  remobtracks.  remobtracks.com
-                   com
+  panel.           feed.           unsub.
+  yourdomain.com   yourdomain.com  yourdomain.com
        │              │               │
        │  Admin UI    │  Feed API     │  Unsubscribe
        │  Auth/Setup  │  CSV Export   │  Status Check
@@ -37,9 +36,11 @@ A stateless, self-hosted opt-out and suppression manager for affiliate marketers
 
 | Subdomain                  | Purpose               | Allowed Paths                       |
 |----------------------------|-----------------------|-------------------------------------|
-| `unsubpanel.remobtracks.com` | Admin panel         | `/`, `/admin`, `/auth`, `/health`  |
-| `supp.remobtracks.com`       | Suppression feeds  | `/feed`, `/health`                 |
-| `unsubscribe.remobtracks.com`| Unsubscribe flow   | `/u`, `/check`, `/status`, `/health`|
+| `panel.yourdomain.com`     | Admin panel           | `/`, `/admin`, `/auth`, `/health`   |
+| `feed.yourdomain.com`      | Suppression feeds     | `/feed`, `/health`                  |
+| `unsub.yourdomain.com`     | Unsubscribe flow      | `/u`, `/check`, `/status`, `/health`|
+
+> **Note**: Replace `yourdomain.com` with your actual domain throughout this guide.
 
 ---
 
@@ -59,7 +60,7 @@ A stateless, self-hosted opt-out and suppression manager for affiliate marketers
 1. Go to **AWS Console → EC2 → Launch Instance**
 2. Choose **Ubuntu 22.04 LTS** (or 24.04 / 26.04)
 3. Instance type: **t3a.micro** (free tier) or **t3a.small**
-4. Key pair: create or select your existing key (e.g. `ubuntiVirgin.pem`)
+4. Key pair: create or select your existing key (e.g. `my-key.pem`)
 5. Security Group — add these inbound rules:
 
 | Type | Port | Source     |
@@ -69,23 +70,23 @@ A stateless, self-hosted opt-out and suppression manager for affiliate marketers
 | HTTPS| 443  | 0.0.0.0/0 |
 
 6. Storage: **8 GB** gp3 is enough
-7. Launch and note the **Public IPv4** (e.g. `35.153.176.232`)
+7. Launch and note the **Public IPv4** (e.g. `YOUR_EC2_IP`)
 
 ### Step 2: Set Up DNS
 
 Create 3 **A records** at your domain registrar, all pointing to the EC2 public IP:
 
-| Record                             | Type | Value         |
-|------------------------------------|------|---------------|
-| `unsubpanel.remobtracks.com`       | A    | `35.153.176.232` |
-| `supp.remobtracks.com`             | A    | `35.153.176.232` |
-| `unsubscribe.remobtracks.com`      | A    | `35.153.176.232` |
+| Record                        | Type | Value          |
+|-------------------------------|------|----------------|
+| `panel.yourdomain.com`        | A    | `YOUR_EC2_IP` |
+| `feed.yourdomain.com`         | A    | `YOUR_EC2_IP` |
+| `unsub.yourdomain.com`        | A    | `YOUR_EC2_IP` |
 
 Wait for DNS propagation (usually 1–5 minutes). Verify with:
 
 ```bash
-dig +short unsubpanel.remobtracks.com
-# Should return: 35.153.176.232
+dig +short panel.yourdomain.com
+# Should return: YOUR_EC2_IP
 ```
 
 ### Step 3: Clone the Repository
@@ -93,13 +94,13 @@ dig +short unsubpanel.remobtracks.com
 SSH into your EC2 instance:
 
 ```bash
-ssh -i ubuntiVirgin.pem ubuntu@ec2-35-153-176-232.compute-1.amazonaws.com
+ssh -i my-key.pem ubuntu@YOUR_EC2_IP
 ```
 
 Clone the app:
 
 ```bash
-sudo git clone https://github.com/essalmiyouness11-blip/optout-manager.git /opt/suppression-manager
+sudo git clone https://github.com/YOUR_USER/optout-manager.git /opt/suppression-manager
 sudo chown -R ubuntu:ubuntu /opt/suppression-manager
 ```
 
@@ -130,14 +131,14 @@ When done, you'll see:
 ══════════════════════════════════════════════════════
 
   App running at:  http://127.0.0.1:8000
-  EC2 Public IP:   35.153.176.232
+  EC2 Public IP:   YOUR_EC2_IP
 
   Next steps:
   3. Once DNS propagates, run certbot for SSL:
-     certbot --nginx -d unsubpanel.remobtracks.com -d supp.remobtracks.com -d unsubscribe.remobtracks.com
+     certbot --nginx -d panel.yourdomain.com -d feed.yourdomain.com -d unsub.yourdomain.com
 
   4. Complete initial admin setup at:
-     https://unsubpanel.remobtracks.com/auth/setup
+     https://panel.yourdomain.com/auth/setup
 ```
 
 ### Step 5: Enable HTTPS with Certbot
@@ -146,9 +147,9 @@ Once DNS A records are live and resolving to your EC2 IP, run certbot to get fre
 
 ```bash
 sudo certbot --nginx \
-  -d unsubpanel.remobtracks.com \
-  -d supp.remobtracks.com \
-  -d unsubscribe.remobtracks.com \
+  -d panel.yourdomain.com \
+  -d feed.yourdomain.com \
+  -d unsub.yourdomain.com \
   --non-interactive \
   --agree-tos \
   --email your@email.com \
@@ -162,7 +163,7 @@ Certbot will:
 
 ### Step 6: Create Your Admin Account
 
-Open **https://unsubpanel.remobtracks.com/auth/setup** in your browser.
+Open **https://panel.yourdomain.com/auth/setup** in your browser.
 
 Create your admin username and password. You'll be redirected to the login page after setup.
 
@@ -180,9 +181,9 @@ The `.env` file at `/opt/suppression-manager/.env`:
 |-------------------------|----------|-----------------------------------------------------------------------------|
 | `SECRET_KEY`            | Yes      | 64-char hex string. Encrypts all data. **Lose this = lose all data.**      |
 | `ADMIN_API_KEY`         | No       | Legacy API key for admin operations.                                       |
-| `BASE_URL`              | Yes      | Admin panel URL, e.g. `https://unsubpanel.remobtracks.com`                 |
-| `UNSUBSCRIBE_BASE_URL`  | Yes      | Unsubscribe page URL, e.g. `https://unsubscribe.remobtracks.com`           |
-| `DOWNLOAD_BASE_URL`     | Yes      | Feed download URL, e.g. `https://supp.remobtracks.com`                     |
+| `BASE_URL`              | Yes      | Admin panel URL, e.g. `https://panel.yourdomain.com`                       |
+| `UNSUBSCRIBE_BASE_URL`  | Yes      | Unsubscribe page URL, e.g. `https://unsub.yourdomain.com`                  |
+| `DOWNLOAD_BASE_URL`     | Yes      | Feed download URL, e.g. `https://feed.yourdomain.com`                      |
 | `SUPPRESSION_FILE`      | No       | Path to encrypted data file. Default: `data/suppressions.enc`              |
 | `SECURE_COOKIE`         | No       | Override cookie security. Auto-detected from `BASE_URL` (https = true).    |
 
@@ -194,17 +195,17 @@ The `.env` file at `/opt/suppression-manager/.env`:
 
 All data lives in two files:
 
-| File                        | Purpose                          |
-|-----------------------------|----------------------------------|
-| `/opt/suppression-manager/.env`               | Secret keys + config     |
-| `/opt/suppression-manager/data/suppressions.enc` | All encrypted data      |
+| File                                    | Purpose                    |
+|-----------------------------------------|----------------------------|
+| `/opt/suppression-manager/.env`               | Secret keys + config  |
+| `/opt/suppression-manager/data/suppressions.enc` | All encrypted data   |
 
 ### Manual Backup
 
 ```bash
 # From your local machine:
-scp -i ubuntiVirgin.pem ubuntu@EC2_IP:/opt/suppression-manager/.env ./
-scp -i ubuntiVirgin.pem ubuntu@EC2_IP:/opt/suppression-manager/data/suppressions.enc ./
+scp -i my-key.pem ubuntu@YOUR_EC2_IP:/opt/suppression-manager/.env ./
+scp -i my-key.pem ubuntu@YOUR_EC2_IP:/opt/suppression-manager/data/suppressions.enc ./
 ```
 
 > **IMPORTANT**: The `SECRET_KEY` in `.env` is required to decrypt `suppressions.enc`. Back up both files together and keep them safe.
@@ -241,7 +242,7 @@ This installs everything from scratch AND restores your data:
 ```bash
 # First, clone the repo on the new EC2:
 ssh -i key.pem ubuntu@NEW_EC2_IP
-sudo git clone https://github.com/essalmiyouness11-blip/optout-manager.git /opt/suppression-manager
+sudo git clone https://github.com/YOUR_USER/optout-manager.git /opt/suppression-manager
 sudo chown -R ubuntu:ubuntu /opt/suppression-manager
 exit
 
@@ -273,7 +274,7 @@ python cli/manage.py import-cmd backup.json
 ## Updating the App
 
 ```bash
-ssh -i key.pem ubuntu@EC2_IP
+ssh -i my-key.pem ubuntu@YOUR_EC2_IP
 cd /opt/suppression-manager
 sudo bash deploy/setup.sh
 ```
@@ -286,7 +287,7 @@ The deploy script is idempotent — it pulls the latest code, updates dependenci
 
 ### Admin Panel
 
-Access at **https://unsubpanel.remobtracks.com**
+Access at **https://panel.yourdomain.com**
 
 | Tab             | Purpose                                                          |
 |-----------------|------------------------------------------------------------------|
@@ -316,13 +317,13 @@ Each offer/network has a **permanent feed URL** (shown on the details page and d
 
 ```
 # JSON feed
-GET https://supp.remobtracks.com/feed/unsubscribers/{target}?token={token}&level=offer
+GET https://feed.yourdomain.com/feed/unsubscribers/{target}?token={token}&level=offer
 
 # CSV (plain emails)
-GET https://supp.remobtracks.com/feed/unsubscribers/{target}/csv?token={token}&level=offer&format=plain
+GET https://feed.yourdomain.com/feed/unsubscribers/{target}/csv?token={token}&level=offer&format=plain
 
 # CSV (MD5 hashes)
-GET https://supp.remobtracks.com/feed/unsubscribers/{target}/csv?token={token}&level=offer&format=md5
+GET https://feed.yourdomain.com/feed/unsubscribers/{target}/csv?token={token}&level=offer&format=md5
 ```
 
 Feed tokens are **persistent** — the same URL works forever unless explicitly regenerated.
@@ -337,7 +338,7 @@ Feed tokens are **persistent** — the same URL works forever unless explicitly 
 ### Checking Suppression Status
 
 ```bash
-curl "https://unsubscribe.remobtracks.com/check" \
+curl "https://unsub.yourdomain.com/check" \
   -H "Content-Type: application/json" \
   -d '{"h":"sha256_of_email","network":"network_id","offer":"offer_id"}'
 ```
@@ -346,7 +347,7 @@ curl "https://unsubscribe.remobtracks.com/check" \
 
 When a user clicks an unsubscribe link:
 
-1. They land on `https://unsubscribe.remobtracks.com/u?t=TOKEN`
+1. They land on `https://unsub.yourdomain.com/u?t=TOKEN`
 2. A themed form appears (randomly selected from 50 designs)
 3. No offer or network information is revealed
 4. After submitting → success page with confirmation
@@ -365,14 +366,14 @@ When a user clicks an unsubscribe link:
 | GET    | `/u/success`          | Success page after unsubscribing           |
 | GET    | `/status`             | Check suppression status (`?h=`)           |
 
-### Feed (supp subdomain)
+### Feed (feed subdomain)
 
 | Method | Path                                       | Description                       |
 |--------|--------------------------------------------|-----------------------------------|
 | GET    | `/feed/unsubscribers/{target}`             | JSON feed (requires `?token=`)   |
 | GET    | `/feed/unsubscribers/{target}/csv`         | CSV feed (requires `?token=`)    |
 
-### Admin (unsubpanel subdomain, requires auth)
+### Admin (panel subdomain, requires auth)
 
 | Method | Path                                               | Description                    |
 |--------|----------------------------------------------------|--------------------------------|
@@ -489,7 +490,7 @@ sudo systemctl status suppression-manager
 curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/
 
 # Test via nginx
-curl -s -o /dev/null -w '%{http_code}' -H 'Host: unsubpanel.remobtracks.com' http://127.0.0.1/
+curl -s -o /dev/null -w '%{http_code}' -H 'Host: panel.yourdomain.com' http://127.0.0.1/
 
 # Check nginx config
 sudo nginx -t
@@ -497,9 +498,9 @@ sudo nginx -t
 
 ### SSL / certificate errors
 
-- Ensure DNS A records resolve to your EC2 IP: `dig +short unsubpanel.remobtracks.com`
+- Ensure DNS A records resolve to your EC2 IP: `dig +short panel.yourdomain.com`
 - Ensure ports 80 and 443 are open in the EC2 security group
-- Re-run certbot: `sudo certbot --nginx -d unsubpanel.remobtracks.com -d supp.remobtracks.com -d unsubscribe.remobtracks.com`
+- Re-run certbot: `sudo certbot --nginx -d panel.yourdomain.com -d feed.yourdomain.com -d unsub.yourdomain.com`
 
 ### "Invalid or expired link" on unsubscribe
 
@@ -516,11 +517,11 @@ If the encrypted file gets corrupted:
 
 You're accessing a path from the wrong subdomain. Check the routing rules:
 
-| Subdomain    | Allowed paths                              |
-|--------------|---------------------------------------------|
-| `unsubpanel` | `/`, `/admin`, `/auth`, `/health`          |
-| `supp`       | `/feed`, `/health`                         |
-| `unsubscribe`| `/u`, `/check`, `/status`, `/health`       |
+| Subdomain   | Allowed paths                              |
+|-------------|---------------------------------------------|
+| `panel`     | `/`, `/admin`, `/auth`, `/health`          |
+| `feed`      | `/feed`, `/health`                         |
+| `unsub`     | `/u`, `/check`, `/status`, `/health`       |
 
 ---
 

@@ -2,12 +2,14 @@
 set -euo pipefail
 
 APP_DIR="/opt/suppression-manager"
-REPO="https://github.com/essalmiyouness11-blip/optout-manager.git"
+REPO="https://github.com/YOUR_USER/optout-manager.git"
 SERVICE_NAME="suppression-manager"
 NGINX_SITE="suppression-manager"
-DOMAIN_PANEL="unsubpanel.remobtracks.com"
-DOMAIN_FEED="supp.remobtracks.com"
-DOMAIN_UNSUB="unsubscribe.remobtracks.com"
+
+# Domains — pass as args or env vars, or edit these defaults
+DOMAIN_PANEL="${DOMAIN_PANEL:-panel.yourdomain.com}"
+DOMAIN_FEED="${DOMAIN_FEED:-feed.yourdomain.com}"
+DOMAIN_UNSUB="${DOMAIN_UNSUB:-unsub.yourdomain.com}"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
