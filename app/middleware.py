@@ -1,18 +1,28 @@
 import os
 import time
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 
-# Host routing rules: (host_prefix, allowed_path_prefixes) — only requests to these
+def _host_of(env_var: str, fallback: str = "") -> str:
+    """Extract the hostname from a configured base URL env var."""
+    raw = os.environ.get(env_var, fallback)
+    host = urlparse(raw).hostname or ""
+    return host.lower()
+
+
+# Host routing rules: (hostname, allowed_path_prefixes) — only requests to these
 # subdomains are restricted to their allowed paths. Unknown hosts = unrestricted.
+# Derived from the configured base URLs so any domain set in .env just works.
 HOST_ROUTES = [
-    ("supp.", ["/feed", "/health"]),
-    ("unsubscribe.", ["/u", "/check", "/status", "/health"]),
-    ("unsubpanel.", ["/", "/admin", "/auth", "/health"]),
+    (_host_of("DOWNLOAD_BASE_URL"), ["/feed", "/health"]),
+    (_host_of("UNSUBSCRIBE_BASE_URL"), ["/u", "/check", "/status", "/health"]),
+    (_host_of("BASE_URL"), ["/", "/admin", "/auth", "/health"]),
 ]
+HOST_ROUTES = [(h, paths) for h, paths in HOST_ROUTES if h]
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
