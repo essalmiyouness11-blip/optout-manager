@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from urllib.parse import urlparse
@@ -5,6 +6,8 @@ from urllib.parse import urlparse
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
+
+log = logging.getLogger(__name__)
 
 
 def _host_of(env_var: str, fallback: str = "") -> str:
@@ -23,6 +26,14 @@ HOST_ROUTES = [
     (_host_of("BASE_URL"), ["/", "/admin", "/auth", "/health"]),
 ]
 HOST_ROUTES = [(h, paths) for h, paths in HOST_ROUTES if h]
+
+if not HOST_ROUTES:
+    # Fail loudly: an empty table would silently disable subdomain isolation and
+    # let every host reach every route. Better to notice than to leak quietly.
+    log.warning(
+        "Host routing is DISABLED: no hostnames resolved from BASE_URL / "
+        "UNSUBSCRIBE_BASE_URL / DOWNLOAD_BASE_URL. All hosts can reach all routes."
+    )
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
